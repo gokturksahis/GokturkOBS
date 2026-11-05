@@ -499,6 +499,27 @@ struct ExamSchoolReport: Codable {
     }
     var classRank: Int? { data.intValue("SD") }
     var generalRank: Int? { data.intValue("GD") }
+    var institutionAverage: Double? {
+        for key in ["KurumOrt", "kurumOrtalamasi", "kurumOrtalaması", "institutionAverage", "schoolAverage", "KO"] {
+            if let value = data[key]?.numberValue { return value }
+        }
+        return Self.findInstitutionAverage(in: graphs)
+    }
+
+    private static func findInstitutionAverage(in value: JSONValue?) -> Double? {
+        guard let value else { return nil }
+        switch value {
+        case .object(let fields):
+            for (key, child) in fields where key.localizedCaseInsensitiveContains("kurum") || key.localizedCaseInsensitiveContains("school") || key.localizedCaseInsensitiveContains("institution") {
+                if let number = child.numberValue { return number }
+            }
+            return fields.values.lazy.compactMap { findInstitutionAverage(in: $0) }.first
+        case .array(let values):
+            return values.lazy.compactMap { findInstitutionAverage(in: $0) }.first
+        case .string, .number, .bool, .null:
+            return nil
+        }
+    }
 
     func questionAnalysis(index: Int) -> [ExamQuestion] {
         let correctKey = Array(data.stringValue("SC\(index)") ?? "")
@@ -580,80 +601,25 @@ private extension Dictionary where Key == String, Value == JSONValue {
 
 struct ExamsView: View {
     @ObservedObject var model: AppModel
+    @State private var showingComparison = false
 
     var body: some View {
         NavigationStack {
             Group {
                 if let dashboard = model.examDashboard {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
-                            if let kpi = dashboard.kpi {
-                                sectionTitle("Genel Bakış")
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), alignment: .leading)], alignment: .leading, spacing: 10) {
-                                    if let count = kpi.examCount { ExamMetricTile(title: "Sınav sayısı", value: "\(count)") }
-                                    if let value = kpi.avgPoint { ExamMetricTile(title: "Ortalama puan", value: value.formatted(.number.precision(.fractionLength(2)))) }
-                                    if let value = kpi.lastPoint { ExamMetricTile(title: "Son puan", value: value.formatted(.number.precision(.fractionLength(2)))) }
-                                    if let value = kpi.lastPointDelta { ExamMetricTile(title: "Son puan değişimi", value: signed(value)) }
-                                    if let value = kpi.avgSuccess { ExamMetricTile(title: "Ortalama başarı", value: percent(value)) }
-                                    if let value = kpi.maxPoint { ExamMetricTile(title: "En yüksek puan", value: value.formatted(.number.precision(.fractionLength(2))), detail: kpi.maxPointExamName) }
-                                    if let lesson = kpi.bestLesson { ExamMetricTile(title: "En yüksek ders", value: percent(lesson.successRate), detail: lesson.lesson) }
-                                    if let lesson = kpi.worstLesson { ExamMetricTile(title: "En düşük ders", value: percent(lesson.successRate), detail: lesson.lesson) }
-                                }
-                            }
-
-                            if !dashboard.exams.isEmpty {
-                                sectionTitle("Puan Grafiği")
-                                Chart(Array(dashboard.exams.enumerated().reversed()), id: \.element.id) { index, exam in
-                                    let point = dashboard.normalizedTrendPoints.indices.contains(index)
-                                        ? dashboard.normalizedTrendPoints[index]
-                                        : exam.point
-                                    LineMark(
-                                        x: .value("Sınav", "\(exam.examDate) · \(dashboard.exams.count - index)"),
-                                        y: .value("Puan", point)
-                                    )
-                                    PointMark(
-                                        x: .value("Sınav", "\(exam.examDate) · \(dashboard.exams.count - index)"),
-                                        y: .value("Puan", point)
-                                    )
-                                }
-                                .chartYAxisLabel("Puan")
-                                .chartYScale(domain: 0...500)
-                                .frame(height: 220)
-                            }
-
-                            if !dashboard.lessonSuccess.isEmpty {
-                                sectionTitle("Ders Başarıları")
-                                Chart(dashboard.lessonSuccess) { lesson in
-                                    BarMark(
-                                        x: .value("Başarı", lesson.successRate),
-                                        y: .value("Ders", lesson.lesson)
-                                    )
-                                    .foregroundStyle(.tint)
-                                }
-                                .chartXAxisLabel("Başarı (%)")
-                                .frame(height: max(130, CGFloat(dashboard.lessonSuccess.count) * 32))
-                            }
-
-                            sectionTitle("Sınavlar")
-                            if dashboard.exams.isEmpty {
-                                ContentUnavailableView("Sınav bulunamadı", systemImage: "pencil")
-                            } else {
-                                LazyVStack(spacing: 0) {
-                                    ForEach(dashboard.exams) { exam in
-                                        NavigationLink {
-                                            ExamDetailView(exam: exam, model: model)
-                                        } label: {
-                                            ExamRow(exam: exam)
-                                        }
-                                        .buttonStyle(.plain)
-                                        Divider()
-                                    }
-                                }
-                            }
+                    HSplitView {
+                        ScrollView {
+                            examsContent(dashboard)
+                                .padding(20)
                         }
-                        .padding(22)
-                        .frame(maxWidth: 980, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minWidth: 300, idealWidth: 360, maxWidth: 460)
+
+                        ScrollView {
+                            summaryContent(dashboard)
+                                .padding(22)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                        .frame(minWidth: 420)
                     }
                 } else if let error = model.error {
                     ContentUnavailableView("Sınavlar alınamadı", systemImage: "exclamationmark.triangle", description: Text(error))
@@ -662,7 +628,118 @@ struct ExamsView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationTitle("Sınavlar")
+            .navigationTitle("Deneme Sınavları")
+            .toolbar {
+                Button { showingComparison = true } label: {
+                    Label("Denemeleri Karşılaştır", systemImage: "checklist.checked")
+                }
+            }
+            .popover(isPresented: $showingComparison, arrowEdge: .bottom) {
+                if let exams = model.examDashboard?.exams {
+                    ExamComparisonPopover(
+                        exams: exams,
+                        model: model,
+                        isPresented: $showingComparison
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func examsContent(_ dashboard: ExamDashboard) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle("Deneme Sınavları")
+                Spacer()
+                Text("\(dashboard.exams.count) sınav")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if dashboard.exams.isEmpty {
+                ContentUnavailableView("Sınav bulunamadı", systemImage: "pencil")
+            } else {
+                LazyVStack(spacing: 10) {
+                    ForEach(dashboard.exams) { exam in
+                        NavigationLink {
+                            ExamDetailView(exam: exam, model: model)
+                        } label: {
+                            ExamRow(exam: exam)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func summaryContent(_ dashboard: ExamDashboard) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionTitle("Özet")
+
+            if let kpi = dashboard.kpi {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), alignment: .leading)], alignment: .leading, spacing: 10) {
+                    if let count = kpi.examCount { ExamMetricTile(title: "Sınav sayısı", value: "\(count)") }
+                    if let value = kpi.avgPoint { ExamMetricTile(title: "Ortalama puan", value: value.formatted(.number.precision(.fractionLength(2)))) }
+                    if let value = kpi.lastPoint { ExamMetricTile(title: "Son puan", value: value.formatted(.number.precision(.fractionLength(2)))) }
+                    if let value = kpi.lastPointDelta { ExamMetricTile(title: "Son puan değişimi", value: signed(value)) }
+                    if let value = kpi.avgSuccess { ExamMetricTile(title: "Ortalama başarı", value: percent(value)) }
+                    if let value = kpi.maxPoint { ExamMetricTile(title: "En yüksek puan", value: value.formatted(.number.precision(.fractionLength(2))), detail: kpi.maxPointExamName) }
+                    if let lesson = kpi.bestLesson { ExamMetricTile(title: "En yüksek ders", value: percent(lesson.successRate), detail: lesson.lesson) }
+                    if let lesson = kpi.worstLesson { ExamMetricTile(title: "En düşük ders", value: percent(lesson.successRate), detail: lesson.lesson) }
+                }
+            }
+
+            if !dashboard.exams.isEmpty {
+                sectionTitle("Puan Grafiği")
+                GroupBox {
+                    let domain = scoreDomain(for: dashboard)
+                    Chart(Array(dashboard.exams.enumerated().reversed()), id: \.element.id) { index, exam in
+                        let point = dashboard.normalizedTrendPoints.indices.contains(index)
+                            ? dashboard.normalizedTrendPoints[index]
+                            : exam.point
+                        BarMark(
+                            x: .value("Sınav", "\(exam.examDate) · \(dashboard.exams.count - index)"),
+                            yStart: .value("Alt sınır", domain.lowerBound),
+                            yEnd: .value("Puan", point),
+                            width: .ratio(0.68)
+                        )
+                        .foregroundStyle(.tint)
+                        .cornerRadius(4)
+                        .annotation(position: .top, spacing: 5) {
+                            Text(point.formatted(.number.precision(.fractionLength(0...1))))
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .chartYAxisLabel("Puan")
+                    .chartYScale(domain: domain)
+                    .chartYAxis {
+                        AxisMarks(position: .leading, values: .stride(by: 50))
+                    }
+                    .chartPlotStyle { plotArea in
+                        plotArea
+                            .background(
+                                .quaternary.opacity(0.35),
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
+                    }
+                    .frame(height: 270)
+                }
+            }
+
+            if !dashboard.lessonSuccess.isEmpty {
+                sectionTitle("Ders Başarıları")
+                Chart(dashboard.lessonSuccess) { lesson in
+                    BarMark(
+                        x: .value("Başarı", lesson.successRate),
+                        y: .value("Ders", lesson.lesson)
+                    )
+                    .foregroundStyle(.tint)
+                }
+                .chartXAxisLabel("Başarı (%)")
+                .frame(height: max(130, CGFloat(dashboard.lessonSuccess.count) * 32))
+            }
         }
     }
 
@@ -674,10 +751,257 @@ struct ExamsView: View {
         "\(value.formatted(.number.precision(.fractionLength(1))))%"
     }
 
+    private func scoreDomain(for dashboard: ExamDashboard) -> ClosedRange<Double> {
+        let points = dashboard.normalizedTrendPoints.isEmpty
+            ? dashboard.exams.map(\.point)
+            : dashboard.normalizedTrendPoints
+        let minimumPoint = points.min() ?? 350
+        let lowerBound = min(350, floor(minimumPoint / 50) * 50)
+        return max(0, lowerBound)...500
+    }
+
     private func signed(_ value: Double) -> String {
         let formatted = value.formatted(.number.precision(.fractionLength(2)))
         return value > 0 ? "+\(formatted)" : formatted
     }
+}
+
+private struct ExamComparisonPopover: View {
+    let exams: [StudentExam]
+    @ObservedObject var model: AppModel
+    @Binding var isPresented: Bool
+    @State private var selectedIDs: Set<String> = []
+    @State private var result: ExamComparisonResult?
+    @State private var isLoading = false
+
+    var body: some View {
+        Group {
+            if let result {
+                ExamComparisonResultPopup(
+                    result: result,
+                    selectedExamCount: selectedIDs.count,
+                    onChooseAgain: { self.result = nil },
+                    onDismiss: { isPresented = false }
+                )
+            } else {
+                ExamSelectionPopover(
+                    exams: exams,
+                    selectedIDs: $selectedIDs,
+                    isLoading: isLoading,
+                    onCompare: { Task { await calculate() } },
+                    onDismiss: { isPresented = false }
+                )
+            }
+        }
+        .animation(.snappy, value: result != nil)
+    }
+
+    @MainActor private func calculate() async {
+        isLoading = true
+        defer { isLoading = false }
+        result = await model.compareExams(exams.filter { selectedIDs.contains($0.id) })
+    }
+}
+
+private struct ExamSelectionPopover: View {
+    let exams: [StudentExam]
+    @Binding var selectedIDs: Set<String>
+    let isLoading: Bool
+    let onCompare: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ExamPickerHeader(selectedCount: selectedIDs.count)
+
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(exams) { exam in
+                        ExamPickerRow(
+                            exam: exam,
+                            isSelected: selectedIDs.contains(exam.id)
+                        ) {
+                            toggle(exam.id)
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 310)
+
+            HStack {
+                Button("Vazgeç", action: onDismiss)
+                    .buttonStyle(.borderless)
+
+                Spacer()
+
+                Button(action: onCompare) {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Karşılaştır", systemImage: "sparkles")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedIDs.isEmpty || isLoading)
+            }
+        }
+        .padding(16)
+        .frame(width: 390)
+    }
+
+    private func toggle(_ id: String) {
+        if selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+        } else {
+            selectedIDs.insert(id)
+        }
+    }
+}
+
+private struct ExamPickerHeader: View {
+    let selectedCount: Int
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "folder.badge.gearshape")
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: 38, height: 38)
+                .background(.tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Denemeleri Seç")
+                    .font(.headline)
+                Text(selectedCount == 0 ? "Karşılaştırmak istediğin denemeleri seç." : "\(selectedCount) deneme seçildi")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct ExamPickerRow: View {
+    let exam: StudentExam
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "folder.fill" : "folder")
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(exam.examName)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text("\(exam.examDate) · \(exam.point.formatted(.number.precision(.fractionLength(0...2)))) puan")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isSelected ? "Seçili" : "Seçili değil")
+    }
+}
+
+private struct ExamComparisonResultPopup: View {
+    let result: ExamComparisonResult
+    let selectedExamCount: Int
+    let onChooseAgain: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [.blue.opacity(0.32), .purple.opacity(0.22), .mint.opacity(0.18)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Karşılaştırma hazır", systemImage: "sparkles")
+                            .font(.headline)
+                        Text("\(selectedExamCount) denemenin ortalaması")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Kapat")
+                }
+
+                HStack(spacing: 10) {
+                    ExamComparisonMetric(
+                        title: "Puan ortalaman",
+                        value: result.studentAverage.formatted(.number.precision(.fractionLength(2)))
+                    )
+                    ExamComparisonMetric(
+                        title: "Genel derece",
+                        value: result.generalRankAverage?.formatted(.number.precision(.fractionLength(0...2))) ?? "Bulunamadı",
+                        detail: result.rankedExamCount > 0 ? "\(result.rankedExamCount) sınavdan" : nil
+                    )
+                }
+
+                Button("Yeni Seçim", systemImage: "folder") {
+                    onChooseAgain()
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(18)
+        }
+        .background(.regularMaterial)
+        .frame(width: 390)
+    }
+}
+
+private struct ExamComparisonMetric: View {
+    let title: String
+    let value: String
+    var detail: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+            if let detail {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+struct ExamComparisonResult {
+    let studentAverage: Double
+    let generalRankAverage: Double?
+    let rankedExamCount: Int
 }
 
 private struct ExamMetricTile: View {
@@ -695,7 +1019,7 @@ private struct ExamMetricTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
         .padding(10)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 6))
+        .appCardSurface(cornerRadius: 6)
     }
 }
 
@@ -703,25 +1027,52 @@ private struct ExamRow: View {
     let exam: StudentExam
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(exam.examName).font(.headline)
+                Text(exam.examName)
+                    .font(.headline)
+                    .lineLimit(2)
                 Spacer()
                 Text(exam.point.formatted(.number.precision(.fractionLength(2))))
                     .font(.title3.weight(.semibold).monospacedDigit())
             }
-            HStack {
-                Text(exam.examDate)
+
+            HStack(spacing: 8) {
+                Label(exam.examDate, systemImage: "calendar")
                 Spacer()
-                Text("Net \(exam.net.formatted(.number.precision(.fractionLength(2))))")
-                Text("D/Y/B \(exam.dogru)/\(exam.yanlis)/\(exam.bos)")
                 Text("\(exam.successRate.formatted(.number.precision(.fractionLength(1))))%")
+                    .monospacedDigit()
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
+            ProgressView(value: min(max(exam.successRate, 0), 100), total: 100)
+                .tint(.accentColor)
+
+            HStack(spacing: 0) {
+                metric("Net", exam.net.formatted(.number.precision(.fractionLength(0...2))))
+                Divider().frame(height: 26)
+                metric("Doğru", "\(exam.dogru)")
+                Divider().frame(height: 26)
+                metric("Yanlış", "\(exam.yanlis)")
+                Divider().frame(height: 26)
+                metric("Boş", "\(exam.bos)")
+            }
         }
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
+        .padding(12)
+        .appCardSurface(cornerRadius: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -749,23 +1100,17 @@ struct ExamDetailView: View {
                             Text(exam.examDate)
                                 .foregroundStyle(.secondary)
                         }
-                        Picker("Sınav bölümü", selection: $section) {
-                            ForEach(Section.allCases) { item in
-                                Text(item.rawValue).tag(item)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 420)
-                        .padding(.top, 8)
                     }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     Divider()
-                    ExamDetailSectionContent(
-                        section: section,
-                        exam: exam,
-                        report: report
-                    )
+
+                    ViewThatFits(in: .horizontal) {
+                        expandedDetail(report: report)
+                            .frame(minWidth: 1120)
+
+                        compactDetail(report: report)
+                    }
                 }
             } else if model.isLoadingExamReport {
                 ProgressView("Sınav detayları yükleniyor...")
@@ -780,6 +1125,67 @@ struct ExamDetailView: View {
         .navigationTitle(exam.examName)
         .task(id: exam.id) {
             await model.loadExamReport(examId: exam.examId, examType: exam.examType)
+        }
+    }
+
+    private func expandedDetail(report: ExamSchoolReport) -> some View {
+        HStack(spacing: 0) {
+            detailColumn("Sonuçlar", systemImage: "chart.bar.doc.horizontal") {
+                ExamResultsSection(exam: exam, report: report)
+            }
+            .frame(minWidth: 350)
+
+            Divider()
+
+            detailColumn("Cevaplar", systemImage: "checklist") {
+                ExamAnswersSection(subjects: report.subjectResults())
+            }
+            .frame(minWidth: 410)
+
+            Divider()
+
+            detailColumn("Kazanım", systemImage: "list.bullet.clipboard") {
+                ExamAnalysisSection(lessons: report.achievementAnalyses())
+            }
+            .frame(minWidth: 350)
+        }
+    }
+
+    private func compactDetail(report: ExamSchoolReport) -> some View {
+        VStack(spacing: 0) {
+            Picker("Sınav bölümü", selection: $section) {
+                ForEach(Section.allCases) { item in
+                    Text(item.rawValue).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 420)
+            .padding(16)
+
+            Divider()
+
+            ExamDetailSectionContent(
+                section: section,
+                exam: exam,
+                report: report
+            )
+        }
+    }
+
+    private func detailColumn<Content: View>(
+        _ title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 0) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.bar)
+            Divider()
+            content()
         }
     }
 }
@@ -825,7 +1231,7 @@ private struct ExamResultsSection: View {
                         ExamMetricTile(title: "Sınıf derecesi", value: "\(rank)")
                     }
                     if let rank = report.generalRank {
-                        ExamMetricTile(title: "Genel derece", value: "\(rank)")
+                        ExamMetricTile(title: "Kurum derece", value: "\(rank)")
                     }
                 }
 
@@ -898,20 +1304,32 @@ private struct ExamAnswerSubjectSection: View {
     let subject: ExamSubjectResult
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(subject.lesson)
-                .font(.title3.weight(.semibold))
-            HStack {
-                Text("Soru").frame(width: 48, alignment: .leading)
-                Text("Cevap Anahtarı").frame(width: 100, alignment: .leading)
-                Text("Öğrenci Cevabı").frame(width: 110, alignment: .leading)
-                Text("Durum")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(subject.lesson)
+                    .font(.headline)
+                Spacer()
+                HStack(spacing: 8) {
+                    Label("\(subject.correct)", systemImage: "checkmark")
+                        .foregroundStyle(.green)
+                    Label("\(subject.wrong)", systemImage: "xmark")
+                        .foregroundStyle(.red)
+                    Label("\(subject.blank)", systemImage: "circle")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption.monospacedDigit())
             }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            ForEach(subject.questions) { question in
-                ExamQuestionRow(question: question)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 58, maximum: 72), spacing: 6)],
+                alignment: .leading,
+                spacing: 6
+            ) {
+                ForEach(subject.questions) { question in
+                    ExamQuestionCell(question: question)
+                }
             }
+
             if subject.answerCountsMatchSummary == false {
                 Label("Cevap analizi özet D/Y/B değerleriyle uyuşmuyor.", systemImage: "exclamationmark.circle")
                     .font(.caption2)
@@ -1031,7 +1449,7 @@ private struct ExamLessonAnalysisSection: View {
     }
 }
 
-private struct ExamQuestionRow: View {
+private struct ExamQuestionCell: View {
     let question: ExamQuestion
 
     private var statusColor: Color {
@@ -1044,24 +1462,76 @@ private struct ExamQuestionRow: View {
 
     private var statusText: String {
         switch question.status {
-        case .correct: return "✓ Doğru"
-        case .wrong: return "✗ Yanlış"
+        case .correct: return "Doğru"
+        case .wrong: return "Yanlış"
         case .blank: return "Boş"
         }
     }
 
-    var body: some View {
-        HStack {
-            Text(String(format: "%02d", question.questionNumber))
-                .monospacedDigit().frame(width: 48, alignment: .leading)
-            Text(question.correctAnswer ?? "—")
-                .frame(width: 100, alignment: .leading)
-            Text(question.studentAnswer ?? "Boş")
-                .frame(width: 110, alignment: .leading)
-            Text(statusText).foregroundStyle(statusColor)
+    private var statusSymbol: String {
+        switch question.status {
+        case .correct: return "checkmark"
+        case .wrong: return "xmark"
+        case .blank: return "circle"
         }
-        .font(.callout.monospacedDigit())
-        .padding(.vertical, 3)
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text("\(question.questionNumber).")
+                .font(.caption.weight(.medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+            answerDisplay
+                .frame(height: 18)
+        }
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .padding(.vertical, 4)
+        .appCardSurface(cornerRadius: 6)
+        .help(
+            "Cevap Anahtarı: \(question.correctAnswer ?? "—")\n"
+                + "Öğrenci Cevabı: \(question.studentAnswer ?? "Boş")\n"
+                + "Durum: \(statusText)"
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(question.questionNumber). soru, \(statusText)")
+        .accessibilityValue(
+            "Cevap anahtarı \(question.correctAnswer ?? "belirtilmemiş"), "
+                + "öğrenci cevabı \(question.studentAnswer ?? "boş")"
+        )
+    }
+
+    @ViewBuilder
+    private var answerDisplay: some View {
+        switch question.status {
+        case .correct:
+            Image(systemName: statusSymbol)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(statusColor)
+        case .wrong:
+            HStack(spacing: 3) {
+                Text(question.studentAnswer ?? "—")
+                    .foregroundStyle(.red)
+                    .font(.caption2.weight(.medium).monospaced())
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(question.correctAnswer ?? "—")
+                    .foregroundStyle(.green)
+                    .font(.body.weight(.bold).monospaced())
+            }
+        case .blank:
+            HStack(spacing: 3) {
+                Text("—")
+                    .foregroundStyle(.secondary)
+                    .font(.caption2.weight(.medium).monospaced())
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(question.correctAnswer ?? "—")
+                    .foregroundStyle(.green)
+                    .font(.body.weight(.bold).monospaced())
+            }
+        }
     }
 }
 

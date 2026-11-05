@@ -32,6 +32,7 @@ struct AppSidebarView: View {
     let isLoadingProfile: Bool
     @Binding var isScreenshotMode: Bool
     let selectProfile: () -> Void
+    let switchAccount: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -70,11 +71,12 @@ struct AppSidebarView: View {
             Divider()
 
             SidebarProfileView(
-                name: isScreenshotMode ? nil : profile?.name,
-                image: isScreenshotMode ? nil : profileImage,
-                isLoading: isScreenshotMode ? false : isLoadingProfile,
+                name: profile?.name,
+                image: profileImage,
+                isLoading: isLoadingProfile,
                 isScreenshotMode: $isScreenshotMode,
-                action: selectProfile
+                action: selectProfile,
+                switchAccount: switchAccount
             )
         }
     }
@@ -86,6 +88,7 @@ private struct SidebarProfileView: View {
     let isLoading: Bool
     @Binding var isScreenshotMode: Bool
     let action: () -> Void
+    let switchAccount: () -> Void
     @State private var isHovering = false
 
     var body: some View {
@@ -115,6 +118,10 @@ private struct SidebarProfileView: View {
             .accessibilityHint("Profil bilgilerini gösterir")
 
             Menu {
+                Button(action: switchAccount) {
+                    Label("Hesap Değiştir", systemImage: "person.crop.circle.badge.arrow.trianglehead.counterclockwise")
+                }
+                Divider()
                 Toggle(isOn: $isScreenshotMode) {
                     Label("Ekran Görüntüsü Modu", systemImage: "eye.slash")
                 }
@@ -139,9 +146,6 @@ private struct SidebarProfileView: View {
     }
 
     private var displayName: String {
-        if isScreenshotMode {
-            return "Öğrenci"
-        }
         guard let name, !name.isEmpty else {
             return "Öğrenci"
         }
@@ -219,7 +223,7 @@ private struct FullProfileImage: View {
                 .scaledToFit()
                 .frame(maxWidth: 260, maxHeight: 320)
                 .padding(8)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+                .appCardSurface(cornerRadius: 14)
                 .accessibilityLabel("\(name) profil fotoğrafı")
         } else {
             ProfileAvatarView(name: name, image: nil, size: 112)

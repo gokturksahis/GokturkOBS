@@ -147,6 +147,7 @@ enum OBSSessionKind {
 @MainActor
 final class OBSClient {
     var currentCookieHeader: String?
+    var usesScreenshotData = false
     private(set) var studentProfile: StudentProfile?
     private var cachedStudentProfileImage: NSImage?
     private var studentProfileTask: Task<StudentProfile, Error>?
@@ -969,6 +970,8 @@ struct LoginView: View {
             }
             Form {
                 Section {
+                    TextField("AKBİM okul adresi", text: $model.portalAddress)
+                        .textContentType(.URL)
                     TextField("TC Kimlik No", text: $model.username)
                         .textContentType(.username).focused($focusedField, equals: .username)
                         .onSubmit { focusedField = .password }

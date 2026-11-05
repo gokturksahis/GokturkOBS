@@ -4,12 +4,52 @@ import AppKit
 import PDFKit
 import Combine
 
-let baseURL = URL(string: "https://tedemkolejiobs.com")!
+private let defaultPortalURL = "https://tedemkolejiobs.com"
+var baseURL: URL {
+    URL(string: UserDefaults.standard.string(forKey: "portalBaseURL") ?? defaultPortalURL)
+        ?? URL(string: defaultPortalURL)!
+}
+
+struct AppCardSurfaceModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                cardColor,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(.separator.opacity(borderOpacity), lineWidth: 1)
+            }
+    }
+
+    private var cardColor: Color {
+        if colorScheme == .light {
+            return Color(nsColor: .controlBackgroundColor)
+        }
+        return .white.opacity(colorSchemeContrast == .increased ? 0.11 : 0.07)
+    }
+
+    private var borderOpacity: Double {
+        colorSchemeContrast == .increased ? 0.9 : 0.55
+    }
+}
+
+extension View {
+    func appCardSurface(cornerRadius: CGFloat = 10) -> some View {
+        modifier(AppCardSurfaceModifier(cornerRadius: cornerRadius))
+    }
+}
 
 @MainActor
 final class AppModel: ObservableObject {
     @Published var username = ""
     @Published var password = ""
+    @Published var portalAddress = UserDefaults.standard.string(forKey: "portalBaseURL") ?? defaultPortalURL
     @Published var schedule: LessonSchedule?
     @Published var homework: [Homework] = []
     @Published var examDashboard: ExamDashboard?
@@ -47,6 +87,9 @@ final class AppModel: ObservableObject {
     @Published var isScreenshotMode = UserDefaults.standard.bool(forKey: "isScreenshotMode") {
         didSet {
             UserDefaults.standard.set(isScreenshotMode, forKey: "isScreenshotMode")
+            client.usesScreenshotData = isScreenshotMode
+            if isScreenshotMode { applyScreenshotData() }
+            else { Task { await refresh() } }
         }
     }
     @Published var rememberMe = UserDefaults.standard.bool(forKey: "rememberMe") {
@@ -78,9 +121,16 @@ final class AppModel: ObservableObject {
     private var hasStarted = false
     private var attemptedRememberedLogin = false
     private var foodPhotoPrefetchTask: Task<Void, Never>?
+    private var suppressRememberedAccountOnce = false
 
     init() {
+        client.usesScreenshotData = isScreenshotMode
         configureAutomaticRecovery()
+        if isScreenshotMode { applyScreenshotData() }
+    }
+
+    private func applyScreenshotData() {
+        ScreenshotData.populate(self)
     }
 
     private func configureAutomaticRecovery() {
@@ -138,6 +188,10 @@ final class AppModel: ObservableObject {
 
     func login() async {
         guard !username.isEmpty, !password.isEmpty else { return }
+        guard savePortalAddress() else {
+            error = "Geçerli bir AKBİM adresi girin."
+            return
+        }
         isLoggingIn = true
         error = nil
         let submittedUsername = username
@@ -147,7 +201,7 @@ final class AppModel: ObservableObject {
             var credentialError: String?
             do {
                 if rememberMe {
-                    try keychain.save(username: submittedUsername, password: submittedPassword)
+                    try keychain.save(username: submittedUsername, password: submittedPassword, portalURL: portalAddress)
                 } else {
                     try keychain.delete()
                 }
@@ -169,10 +223,45 @@ final class AppModel: ObservableObject {
         isLoggingIn = false
     }
 
+    @discardableResult
+    private func savePortalAddress() -> Bool {
+        var value = portalAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.lowercased().hasPrefix("http://") && !value.lowercased().hasPrefix("https://") {
+            value = "https://" + value
+        }
+        guard var components = URLComponents(string: value), components.host != nil else { return false }
+        components.scheme = "https"
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return false }
+        let normalizedAddress = url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if normalizedAddress != UserDefaults.standard.string(forKey: "portalBaseURL") {
+            try? client.clearCookies()
+        }
+        portalAddress = normalizedAddress
+        UserDefaults.standard.set(portalAddress, forKey: "portalBaseURL")
+        return true
+    }
+
+    func switchAccount() {
+        logout()
+        UserDefaults.standard.set(false, forKey: "didManuallyLogout")
+        suppressRememberedAccountOnce = true
+        username = ""
+        password = ""
+    }
+
     func prepareRememberedUsername() {
+        if suppressRememberedAccountOnce {
+            suppressRememberedAccountOnce = false
+            return
+        }
         guard rememberMe else { return }
         do {
             if let credentials = try keychain.load(), username.isEmpty {
+                portalAddress = credentials.portalURL
+                UserDefaults.standard.set(credentials.portalURL, forKey: "portalBaseURL")
                 username = credentials.username
             }
         } catch {
@@ -185,6 +274,8 @@ final class AppModel: ObservableObject {
         attemptedRememberedLogin = true
         do {
             guard let credentials = try keychain.load() else { return }
+            portalAddress = credentials.portalURL
+            UserDefaults.standard.set(credentials.portalURL, forKey: "portalBaseURL")
             username = credentials.username
             try await client.login(username: credentials.username, password: credentials.password)
             schedule = try await client.loadIndex()
@@ -224,6 +315,10 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() async {
+        if isScreenshotMode {
+            applyScreenshotData()
+            return
+        }
         guard authenticated else { return }
         var failures: [String] = []
 
@@ -232,6 +327,7 @@ final class AppModel: ObservableObject {
         do {
             schedule = try await client.loadIndex()
         } catch {
+            if isScreenshotMode { applyScreenshotData(); return }
             if requiresExplicitLogin(after: error) {
                 isLoadingSchedule = false
                 authenticated = false
@@ -248,6 +344,7 @@ final class AppModel: ObservableObject {
         do {
             homework = try await client.loadHomework()
         } catch {
+            if isScreenshotMode { applyScreenshotData(); return }
             homeworkError = networkErrorMessage(for: error)
             failures.append("Ödevler alınamadı.")
         }
@@ -258,6 +355,7 @@ final class AppModel: ObservableObject {
         do {
             examDashboard = try await client.loadStudentExams()
         } catch {
+            if isScreenshotMode { applyScreenshotData(); return }
             if requiresExplicitLogin(after: error) {
                 isLoadingExams = false
                 authenticated = false
@@ -273,6 +371,10 @@ final class AppModel: ObservableObject {
     }
 
     func refreshHome(forceReload: Bool = false) async {
+        if isScreenshotMode {
+            applyScreenshotData()
+            return
+        }
         guard authenticated else { return }
         if forceReload || schedule == nil || examDashboard == nil || homeworkError != nil {
             await refresh()
@@ -331,17 +433,29 @@ final class AppModel: ObservableObject {
             }
         }
 
+        if isScreenshotMode {
+            homeworkDetail = ScreenshotData.homeworkDetail(for: id)
+            if homeworkDetail == nil { homeworkDetailError = "Ödev detayı bulunamadı." }
+            return
+        }
+
         do {
             let detail = try await client.loadHomeworkDetail(id: id)
             guard homeworkDetailRequestToken == requestToken else { return }
             homeworkDetail = detail
         } catch {
             guard homeworkDetailRequestToken == requestToken else { return }
+            guard !isScreenshotMode else { applyScreenshotData(); return }
             homeworkDetailError = error.localizedDescription
         }
     }
 
     func loadSidebarProfile() async {
+        if isScreenshotMode {
+            studentProfile = ScreenshotData.profile
+            studentProfileImage = nil
+            return
+        }
         guard authenticated,
               !isLoadingStudentProfile,
               !hasAttemptedStudentProfileLoad else {
@@ -356,9 +470,15 @@ final class AppModel: ObservableObject {
 
         do {
             let profile = try await client.loadCompleteStudentProfile()
+            guard !isScreenshotMode else {
+                studentProfile = ScreenshotData.profile
+                studentProfileImage = nil
+                return
+            }
             studentProfile = profile
             do {
-                studentProfileImage = try await client.loadStudentProfileImage(for: profile)
+                let image = try await client.loadStudentProfileImage(for: profile)
+                studentProfileImage = isScreenshotMode ? nil : image
             } catch {
                 studentProfileImage = nil
             }
@@ -429,14 +549,49 @@ final class AppModel: ObservableObject {
             }
         }
 
+        if isScreenshotMode {
+            examReport = ScreenshotData.examReport
+            return
+        }
+
         do {
             let report = try await client.loadSchoolReport(examId: examId, examType: examType)
             guard examReportRequestToken == requestToken else { return }
             examReport = report
         } catch {
             guard examReportRequestToken == requestToken else { return }
+            guard !isScreenshotMode else { applyScreenshotData(); return }
             examReportError = error.localizedDescription
         }
+    }
+
+    func compareExams(_ exams: [StudentExam]) async -> ExamComparisonResult? {
+        guard !exams.isEmpty else { return nil }
+        let studentAverage = exams.map(\.point).reduce(0, +) / Double(exams.count)
+        var generalRanks: [Double] = []
+
+        for exam in exams {
+            if Task.isCancelled { return nil }
+            if isScreenshotMode {
+                if let rank = ScreenshotData.examReport?.generalRank {
+                    generalRanks.append(Double(rank))
+                }
+                continue
+            }
+            if let report = try? await client.loadSchoolReport(examId: exam.examId, examType: exam.examType),
+               let rank = report.generalRank {
+                generalRanks.append(Double(rank))
+            }
+        }
+
+        let generalRankAverage = generalRanks.isEmpty
+            ? nil
+            : generalRanks.reduce(0, +) / Double(generalRanks.count)
+        return ExamComparisonResult(
+            studentAverage: studentAverage,
+            generalRankAverage: generalRankAverage,
+            rankedExamCount: generalRanks.count
+        )
     }
 
     func loadTaramalar(forceReload: Bool = false) async {
@@ -455,6 +610,7 @@ final class AppModel: ObservableObject {
             taramalar = Self.sortTaramalar(loaded)
         } catch {
             guard taramalarRequestToken == requestToken, !Task.isCancelled else { return }
+            guard !isScreenshotMode else { applyScreenshotData(); return }
             taramalarError = taramaErrorMessage(error, fallback: "Tarama sonuçları alınamadı.")
         }
     }
@@ -481,6 +637,7 @@ final class AppModel: ObservableObject {
             loadedTaramaDetailCode = examCode
         } catch {
             guard taramaDetailRequestToken == requestToken, !Task.isCancelled else { return }
+            guard !isScreenshotMode else { applyScreenshotData(); return }
             taramaDetailError = taramaErrorMessage(error, fallback: "Tarama detayları yüklenemedi.")
         }
     }
@@ -503,6 +660,7 @@ final class AppModel: ObservableObject {
             loadedTaramaAnalysisCode = examCode
         } catch {
             guard taramaAnalysisRequestToken == requestToken, !Task.isCancelled else { return }
+            guard !isScreenshotMode else { applyScreenshotData(); return }
             taramaAnalysisError = taramaErrorMessage(error, fallback: "Kazanım analizi yüklenemedi.")
         }
     }
@@ -860,7 +1018,7 @@ private struct HomeworkDetailView: View {
                                 )
                         }
                         .padding(16)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .appCardSurface(cornerRadius: 14)
 
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 190), spacing: 10)],
@@ -953,7 +1111,7 @@ private struct HomeworkDetailView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-        .background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .appCardSurface(cornerRadius: 10)
     }
 
     private func filesSection(_ title: String, files: [HomeworkFile]) -> some View {
@@ -1028,7 +1186,7 @@ private struct HomeworkFileDownloadRow: View {
             }
         }
         .padding(10)
-        .background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .appCardSurface(cornerRadius: 9)
     }
 
     @MainActor
@@ -1080,6 +1238,8 @@ struct MainView: View {
                 isScreenshotMode: $model.isScreenshotMode
             ) {
                 selection = .profile
+            } switchAccount: {
+                model.switchAccount()
             }
             .navigationTitle("GöktürkOBS")
             .task {
@@ -1094,8 +1254,6 @@ struct MainView: View {
             Group {
                 if selection == .home {
                     HomeDashboardView(model: model, selection: $selection)
-                } else if model.isScreenshotMode {
-                    ScreenshotProtectedSectionView(section: selection)
                 } else {
                     switch selection {
                     case .schedule:
@@ -1158,21 +1316,355 @@ struct MainView: View {
     }
 
     private var sidebarContentWidth: CGFloat {
-        let nameLength = model.isScreenshotMode ? 0 : model.studentProfile?.name.count ?? 0
+        let nameLength = model.studentProfile?.name.count ?? 0
         return min(300, 215 + CGFloat(max(nameLength - 14, 0)) * 5.5)
     }
+
+}
+
+@MainActor
+enum ScreenshotData {
+    static func populate(_ model: AppModel) {
+        model.error = nil
+        model.scheduleError = nil
+        model.homeworkError = nil
+        model.examsError = nil
+        model.homeworkDetailError = nil
+        model.examReportError = nil
+        model.taramalarError = nil
+        model.taramaDetailError = nil
+        model.taramaAnalysisError = nil
+        model.isLoadingSchedule = false
+        model.isLoadingHomework = false
+        model.isLoadingExams = false
+        model.isLoadingHomeworkDetail = false
+        model.isLoadingExamReport = false
+        model.isLoadingTaramalar = false
+        model.isLoadingTaramaDetail = false
+        model.isLoadingTaramaAnalysis = false
+        model.isLoadingStudentProfile = false
+        model.studentProfile = profile
+        model.studentProfileImage = nil
+        model.schedule = decode(LessonSchedule.self, json: scheduleJSON)
+        model.examDashboard = decode(ExamDashboard.self, json: examsJSON)
+        model.homework = decode([Homework].self, json: homeworkJSON) ?? []
+        model.taramalar = decode([TaramaExam].self, json: taramalarJSON) ?? []
+        model.foodListState = .loaded(
+            PDFDocument(),
+            [
+                FoodMenuDay(heading: "26 Ekim 2026 Pazartesi", items: ["MERCİMEK ÇORBASI", "FIRINDA TAVUK", "BULGUR PİLAVI", "MEVSİM SALATA", "AYRAN"], pageIndex: 0),
+                FoodMenuDay(heading: "27 Ekim 2026 Salı", items: ["EZOGELİN ÇORBASI", "KÖFTE", "PİRİNÇ PİLAVI", "CACIK", "MEYVE"], pageIndex: 0),
+                FoodMenuDay(heading: "28 Ekim 2026 Çarşamba", items: ["YAYLA ÇORBASI", "TAVUK SOTE", "MAKARNA", "YOĞURT", "TATLI"], pageIndex: 0)
+            ]
+        )
+    }
+
+    static let profile = StudentProfile(stuNo: "1234", classId: "7-A", name: "Göktürk", photoURL: nil)
+    static var examReport: ExamSchoolReport? {
+        decode(ExamSchoolReport.self, json: examReportJSON)
+    }
+
+    static func homeworkDetail(for id: Int) -> HomeworkDetail? {
+        guard let item = (decode([Homework].self, json: homeworkJSON) ?? []).first(where: { $0.id == id }) else {
+            return nil
+        }
+        let descriptions: [Int: String] = [
+            901: "Ders kitabındaki problem çözme bölümünden 42–48. soruları işlem basamaklarını göstererek çözünüz.",
+            902: "Verilen iki metni okuyup paragraf sorularını cevaplayınız. Bilmediğiniz sözcükleri defterinize yazınız.",
+            903: "Kuvvet ve hareket ünitesiyle ilgili araştırmanızı görsellerle destekleyerek kısa bir rapor hâline getiriniz.",
+            904: "Kültür ve miras ünitesinden seçtiğiniz bir tarihî eseri tanıtan beş dakikalık sunum hazırlayınız.",
+            905: "Unit 3 kelimelerini çalışma kağıdına yazıp her kelimeyle birer örnek cümle kurunuz.",
+            906: "Yüzdeler konusu değerlendirme testini çözünüz ve yanlış yaptığınız soruları tekrar inceleyiniz.",
+            907: "Okuduğunuz kitabın karakter, olay ve ana fikir bölümlerini inceleme formuna doldurunuz.",
+            908: "Kurulan elektrik devresinin şemasını çizip deney sonuçlarını rapor formatında teslim ediniz."
+        ]
+        let topics: [Int: String] = [901: "Problemler", 902: "Paragrafta Anlam", 903: "Kuvvet ve Hareket", 904: "Kültür ve Miras", 905: "Vocabulary", 906: "Yüzdeler", 907: "Metin İnceleme", 908: "Elektrik Devreleri"]
+        let object: [String: Any] = [
+            "id": item.id,
+            "title": item.title,
+            "description": descriptions[item.id] ?? "Ödev açıklamasını okuyup belirtilen çalışmayı tamamlayınız.",
+            "startDate": item.startDate,
+            "analysed": item.status == 2 ? 1 : 0,
+            "endDate": item.endDate,
+            "konuAd": topics[item.id] ?? item.lesson,
+            "willBeScored": item.willBeScored,
+            "teaNameSurname": item.teaNameSurname,
+            "typeName": item.typeName,
+            "lesson": item.lesson,
+            "score": item.score,
+            "teacherComment": item.status == 2 ? "Çalışma düzenli ve eksiksiz hazırlanmış." : "",
+            "status": item.status,
+            "statusName": item.statusName,
+            "iconClass": item.iconClass,
+            "isActive": item.isActive,
+            "stuCanAttachFile": item.stuCanAttachFile,
+            "seen": true,
+            "studentAttachFiles": [],
+            "attachFiles": [],
+            "answerFiles": []
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return try? JSONDecoder().decode(HomeworkDetail.self, from: data)
+    }
+
+    static let teachers = records([
+        ["teaNameSurname": "Ayşe Yılmaz", "lesson": "Matematik"],
+        ["teaNameSurname": "Mehmet Demir", "lesson": "Türkçe"],
+        ["teaNameSurname": "Elif Kaya", "lesson": "Fen Bilimleri"]
+    ])
+    static let announcements = records([
+        ["title": "Veli Bilgilendirme Toplantısı", "date": "30.10.2026", "content": "Toplantımız konferans salonunda gerçekleştirilecektir.", "publisherPersonName": "Okul Yönetimi"],
+        ["title": "Kulüp Çalışmaları Başlıyor", "date": "27.10.2026", "content": "Kulüp başvuruları cuma günü sona erecektir.", "publisherPersonName": "Öğrenci İşleri"],
+        ["title": "Kütüphane Çalışma Saatleri", "date": "25.10.2026", "content": "Kütüphanemiz hafta içi 17.30'a kadar açıktır.", "publisherPersonName": "Kütüphane Birimi"]
+    ])
+    static let events = records([
+        ["title": "Bilim Şenliği", "date": "05.11.2026", "time": "10.00", "location": "Okul Bahçesi", "description": "Öğrenci projeleri sergisi"],
+        ["title": "Kitap Söyleşisi", "date": "12.11.2026", "time": "13.30", "location": "Konferans Salonu", "description": "Yazar buluşması"]
+    ])
+    static let inbox = records([
+        ["mailId": "m-1", "mailTitle": "Haftalık Ders Programı", "sender": "Okul Yönetimi", "mailPreview": "Gelecek haftanın çalışma programı yayınlanmıştır.", "mailContent": "Gelecek haftanın çalışma programı yayınlanmıştır. Ders saatlerinde herhangi bir değişiklik bulunmamaktadır.", "sendDate": "24.10.2026 15:40"],
+        ["mailId": "m-2", "mailTitle": "Matematik Etüt Çalışması", "sender": "Ayşe Yılmaz", "mailPreview": "Salı günü yapılacak etüt için çalışma kağıdını getiriniz.", "mailContent": "Salı günü yapılacak matematik etüdü için dağıtılan çalışma kağıdını yanınızda getiriniz.", "sendDate": "23.10.2026 12:15"],
+        ["mailId": "m-3", "mailTitle": "Bilim Şenliği Bilgilendirmesi", "sender": "Öğrenci İşleri", "mailPreview": "Proje teslimleri 2 Kasım Pazartesi günü tamamlanacaktır.", "mailContent": "Bilim şenliği proje teslimleri 2 Kasım Pazartesi günü öğrenci işlerine yapılacaktır.", "sendDate": "21.10.2026 09:05"]
+    ])
+    static let sent = records([
+        ["mailId": "s-1", "mailTitle": "Ödev hakkında", "recipient": "Mehmet Demir", "mailPreview": "Ödev dosyasını sisteme yükledim.", "mailContent": "Merhaba öğretmenim, ödev dosyasını sisteme yükledim.", "sendDate": "20.10.2026 18:22"]
+    ])
+    static let attendance = AttendanceSnapshot(periodDescription: "2026–2027 · 1. Dönem", records: records([
+        ["lesson": "Matematik", "lessonNo": "2", "absenceDate": "14.10.2026", "teaNameSurname": "Ayşe Yılmaz", "description": "İzinli"],
+        ["lesson": "Türkçe", "lessonNo": "1", "absenceDate": "06.10.2026", "teaNameSurname": "Mehmet Demir", "description": "Geç kaldı"]
+    ]))
+
+    private static func records(_ values: [[String: String]]) -> [PortalRecord] {
+        values.enumerated().map { index, record in
+            PortalRecord(values: record.mapValues(JSONValue.string), fallbackID: "screenshot-\(index)")
+        }
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, json: String) -> T? {
+        try? JSONDecoder().decode(type, from: Data(json.utf8))
+    }
+
+    private static let homeworkJSON = #"""
+    [
+      {"id":901,"title":"Problem Çalışması","teaNameSurname":"Ayşe Yılmaz","typeName":"Çalışma","startDate":"22.10.2026","endDate":"28.10.2026","lesson":"Matematik","score":"-","statusName":"Eksik","status":1,"willBeScored":false,"isActive":true},
+      {"id":902,"title":"Paragraf Soruları","teaNameSurname":"Mehmet Demir","typeName":"Test","startDate":"23.10.2026","endDate":"30.10.2026","lesson":"Türkçe","score":"-","statusName":"Yapılmadı","status":0,"willBeScored":false,"isActive":true},
+      {"id":903,"title":"Kuvvet ve Hareket","teaNameSurname":"Elif Kaya","typeName":"Araştırma","startDate":"18.10.2026","endDate":"24.10.2026","lesson":"Fen Bilimleri","score":"100","statusName":"Yapıldı","status":2,"willBeScored":true,"isActive":false},
+      {"id":904,"title":"Kültür ve Miras Sunumu","teaNameSurname":"Can Yıldız","typeName":"Sunum","startDate":"24.10.2026","endDate":"31.10.2026","lesson":"Sosyal Bilgiler","score":"-","statusName":"Eksik","status":1,"willBeScored":true,"isActive":true},
+      {"id":905,"title":"Unit 3 Vocabulary","teaNameSurname":"Zeynep Aydın","typeName":"Çalışma","startDate":"25.10.2026","endDate":"02.11.2026","lesson":"İngilizce","score":"-","statusName":"Yapılmadı","status":0,"willBeScored":false,"isActive":true},
+      {"id":906,"title":"Yüzdeler Testi","teaNameSurname":"Ayşe Yılmaz","typeName":"Test","startDate":"20.10.2026","endDate":"27.10.2026","lesson":"Matematik","score":"95","statusName":"Yapıldı","status":2,"willBeScored":true,"isActive":true},
+      {"id":907,"title":"Kitap İnceleme Formu","teaNameSurname":"Mehmet Demir","typeName":"Proje","startDate":"19.10.2026","endDate":"29.10.2026","lesson":"Türkçe","score":"-","statusName":"Değerlendirilmedi","status":3,"willBeScored":true,"isActive":true},
+      {"id":908,"title":"Elektrik Devreleri Raporu","teaNameSurname":"Elif Kaya","typeName":"Deney","startDate":"26.10.2026","endDate":"05.11.2026","lesson":"Fen Bilimleri","score":"-","statusName":"Yapılmadı","status":0,"willBeScored":true,"isActive":true}
+    ]
+    """#
+
+    private static let taramalarJSON = #"""
+    [
+      {"examType":"TARAMA","sinavKod":"T-103","sinavAd":"Matematik Tarama","sinavTarih":"24.10.2026","point":92},
+      {"examType":"TARAMA","sinavKod":"T-102","sinavAd":"Fen Bilimleri Tarama","sinavTarih":"21.10.2026","point":88},
+      {"examType":"TARAMA","sinavKod":"T-101","sinavAd":"Türkçe Tarama","sinavTarih":"18.10.2026","point":90},
+      {"examType":"TARAMA","sinavKod":"T-100","sinavAd":"Sosyal Bilgiler Tarama","sinavTarih":"15.10.2026","point":84},
+      {"examType":"TARAMA","sinavKod":"T-099","sinavAd":"İngilizce Tarama","sinavTarih":"12.10.2026","point":94},
+      {"examType":"TARAMA","sinavKod":"T-098","sinavAd":"Matematik Kazanım Tarama","sinavTarih":"09.10.2026","point":86},
+      {"examType":"TARAMA","sinavKod":"T-097","sinavAd":"Fen Bilimleri Kazanım Tarama","sinavTarih":"06.10.2026","point":91},
+      {"examType":"TARAMA","sinavKod":"T-096","sinavAd":"Türkçe Kazanım Tarama","sinavTarih":"03.10.2026","point":89}
+    ]
+    """#
+
+    private static let examsJSON = #"""
+    {
+      "success":true,
+      "exams":[
+        {"examId":"D-104","examName":"Genel Deneme Sınavı","examDate":"18.10.2026","point":462.5,"net":78.25,"dogru":86,"yanlis":11,"bos":3,"questionCount":100,"successRate":86,"examType":"SBS"},
+        {"examId":"D-103","examName":"Sayısal Değerlendirme","examDate":"11.10.2026","point":448.75,"net":74.5,"dogru":82,"yanlis":15,"bos":3,"questionCount":100,"successRate":82,"examType":"SBS"},
+        {"examId":"D-102","examName":"Haftalık Deneme","examDate":"04.10.2026","point":455,"net":76,"dogru":84,"yanlis":14,"bos":2,"questionCount":100,"successRate":84,"examType":"SBS"},
+        {"examId":"D-101","examName":"Türkiye Geneli Deneme","examDate":"27.09.2026","point":437.25,"net":71.75,"dogru":80,"yanlis":18,"bos":2,"questionCount":100,"successRate":80,"examType":"SBS"},
+        {"examId":"D-100","examName":"Kazanım Değerlendirme","examDate":"20.09.2026","point":471.5,"net":81.5,"dogru":89,"yanlis":10,"bos":1,"questionCount":100,"successRate":89,"examType":"SBS"},
+        {"examId":"D-099","examName":"Sözel Bölüm Denemesi","examDate":"13.09.2026","point":443,"net":73.25,"dogru":81,"yanlis":16,"bos":3,"questionCount":100,"successRate":81,"examType":"SBS"},
+        {"examId":"D-098","examName":"Sayısal Bölüm Denemesi","examDate":"06.09.2026","point":429.75,"net":69.5,"dogru":78,"yanlis":20,"bos":2,"questionCount":100,"successRate":78,"examType":"SBS"},
+        {"examId":"D-097","examName":"Dönem Başlangıç Denemesi","examDate":"30.08.2026","point":418.5,"net":66.75,"dogru":75,"yanlis":22,"bos":3,"questionCount":100,"successRate":75,"examType":"SBS"}
+      ],
+      "kpi":{"examCount":8,"avgPoint":445.78,"lastPoint":462.5,"lastPointDelta":13.75,"maxPoint":471.5,"maxPointExamName":"Kazanım Değerlendirme","avgSuccess":82},
+      "lessonSuccess":[{"lesson":"Matematik","successRate":91},{"lesson":"Türkçe","successRate":84},{"lesson":"Fen Bilimleri","successRate":88},{"lesson":"Sosyal Bilgiler","successRate":79},{"lesson":"İngilizce","successRate":86},{"lesson":"Din Kültürü","successRate":83}],
+      "trend":{"point":[418.5,429.75,443,471.5,437.25,455,448.75,462.5]},"lessons":[]
+    }
+    """#
+
+    private static let examReportJSON = #"""
+    {
+      "success": true,
+      "data": {
+        "Puan": 462.5, "KurumOrt": 421.75, "N7": 78.25, "D7": 86, "Y7": 11, "B7": 3, "SR7": 100, "SD": 2, "GD": 148,
+        "SR1": 20, "D1": 18, "Y1": 2, "B1": 0, "N1": 17.33, "SC1": "ABCDABCDABCDABCDABCD", "OC1": "ABCDABCDABCDABCDABcd",
+        "SR2": 20, "D2": 17, "Y2": 2, "B2": 1, "N2": 16.33, "SC2": "BCDABCDABCDABCDABCDA", "OC2": "BCDABCDABCDABCDABbc ",
+        "SR3": 10, "D3": 9, "Y3": 1, "B3": 0, "N3": 8.67, "SC3": "CDABCDABCD", "OC3": "CDABCDABCd",
+        "SR4": 20, "D4": 18, "Y4": 1, "B4": 1, "N4": 17.67, "SC4": "DABCDABCDABCDABCDABC", "OC4": "DABCDABCDABCDABCDAc ",
+        "SR5": 10, "D5": 9, "Y5": 1, "B5": 0, "N5": 8.67, "SC5": "ABCDABCDAB", "OC5": "ABCDABCDAa",
+        "SR6": 20, "D6": 15, "Y6": 4, "B6": 1, "N6": 13.67, "SC6": "BCDABCDABCDABCDABCDA", "OC6": "BCDABCDABCDABCDdabc "
+      },
+      "subanal": [
+        {"lesson":"Matematik","topic":"Oran ve Orantı","questionCount":8,"correct":7,"wrong":1,"successRate":87.5},
+        {"lesson":"Matematik","topic":"Yüzdeler","questionCount":6,"correct":5,"wrong":1,"successRate":83.3},
+        {"lesson":"Türkçe","topic":"Paragrafta Anlam","questionCount":10,"correct":9,"wrong":1,"successRate":90},
+        {"lesson":"Türkçe","topic":"Fiiller","questionCount":6,"correct":5,"wrong":1,"successRate":83.3},
+        {"lesson":"Fen Bilimleri","topic":"Kuvvet ve Enerji","questionCount":10,"correct":9,"wrong":1,"successRate":90},
+        {"lesson":"Fen Bilimleri","topic":"Hücre ve Bölünmeler","questionCount":8,"correct":7,"wrong":0,"successRate":87.5},
+        {"lesson":"Sosyal Bilgiler","topic":"Kültür ve Miras","questionCount":10,"correct":9,"wrong":1,"successRate":90},
+        {"lesson":"İngilizce","topic":"Biographies","questionCount":10,"correct":8,"wrong":2,"successRate":80}
+      ],
+      "graphs": {}
+    }
+    """#
+
+    private static let scheduleJSON = #"""
+    {
+      "periodList":[{"id":1,"description":"2026–2027 Eğitim Öğretim Yılı"}],"periodId":1,
+      "data":{"xInfo":[["1. Ders","09.00–09.40"],["2. Ders","09.50–10.30"],["3. Ders","10.40–11.20"],["4. Ders","11.30–12.10"],["5. Ders","13.00–13.40"],["6. Ders","13.50–14.30"],["7. Ders","14.40–15.20"],["8. Ders","15.30–16.10"]],
+      "yInfo":[["Pazartesi"],["Salı"],["Çarşamba"],["Perşembe"],["Cuma"]],
+      "data":[
+        {"x":1,"y":1,"id":"1-1","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Problemler"}},
+        {"x":2,"y":1,"id":"2-1","text":["Mehmet Demir","Türkçe"],"data":{"headerTitle":"Paragraf"}},
+        {"x":3,"y":1,"id":"3-1","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Kuvvet ve Hareket"}},
+        {"x":4,"y":1,"id":"4-1","text":["Can Yıldız","Sosyal Bilgiler"],"data":{"headerTitle":"Kültür ve Miras"}},
+        {"x":5,"y":1,"id":"5-1","text":["Zeynep Aydın","İngilizce"],"data":{"headerTitle":"Daily Routines"}},
+        {"x":6,"y":1,"id":"6-1","text":["Selin Aksoy","Görsel Sanatlar"],"data":{"headerTitle":"Renk Çalışmaları"}},
+        {"x":7,"y":1,"id":"7-1","text":["Burak Çetin","Beden Eğitimi"],"data":{"headerTitle":"Takım Sporları"}},
+        {"x":8,"y":1,"id":"8-1","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Oran Orantı"}},
+        {"x":1,"y":2,"id":"1-2","text":["Zeynep Aydın","İngilizce"],"data":{"headerTitle":"Unit 3"}},
+        {"x":2,"y":2,"id":"2-2","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Oran Orantı"}},
+        {"x":3,"y":2,"id":"3-2","text":["Can Yıldız","Sosyal Bilgiler"],"data":{"headerTitle":"Kültür ve Miras"}},
+        {"x":4,"y":2,"id":"4-2","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Enerji"}},
+        {"x":5,"y":2,"id":"5-2","text":["Mehmet Demir","Türkçe"],"data":{"headerTitle":"Fiiller"}},
+        {"x":6,"y":2,"id":"6-2","text":["Murat Koç","Din Kültürü"],"data":{"headerTitle":"Ahlaki Davranışlar"}},
+        {"x":7,"y":2,"id":"7-2","text":["Zeynep Aydın","İngilizce"],"data":{"headerTitle":"Biographies"}},
+        {"x":8,"y":2,"id":"8-2","text":["Burak Çetin","Beden Eğitimi"],"data":{"headerTitle":"Atletizm"}},
+        {"x":1,"y":3,"id":"1-3","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Enerji"}},
+        {"x":2,"y":3,"id":"2-3","text":["Mehmet Demir","Türkçe"],"data":{"headerTitle":"Fiiller"}},
+        {"x":3,"y":3,"id":"3-3","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Yüzdeler"}},
+        {"x":4,"y":3,"id":"4-3","text":["Can Yıldız","Sosyal Bilgiler"],"data":{"headerTitle":"İnsanlar ve Yerler"}},
+        {"x":5,"y":3,"id":"5-3","text":["Zeynep Aydın","İngilizce"],"data":{"headerTitle":"Environment"}},
+        {"x":6,"y":3,"id":"6-3","text":["Selin Aksoy","Müzik"],"data":{"headerTitle":"Ritim Çalışması"}},
+        {"x":7,"y":3,"id":"7-3","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Madde ve Isı"}},
+        {"x":8,"y":3,"id":"8-3","text":["Mehmet Demir","Türkçe"],"data":{"headerTitle":"Metin Türleri"}},
+        {"x":1,"y":4,"id":"1-4","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Yüzdeler"}},
+        {"x":2,"y":4,"id":"2-4","text":["Zeynep Aydın","İngilizce"],"data":{"headerTitle":"Daily Routines"}},
+        {"x":3,"y":4,"id":"3-4","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Hücre ve Bölünmeler"}},
+        {"x":4,"y":4,"id":"4-4","text":["Mehmet Demir","Türkçe"],"data":{"headerTitle":"Sözcükte Anlam"}},
+        {"x":5,"y":4,"id":"5-4","text":["Can Yıldız","Sosyal Bilgiler"],"data":{"headerTitle":"Bilim ve Teknoloji"}},
+        {"x":6,"y":4,"id":"6-4","text":["Murat Koç","Din Kültürü"],"data":{"headerTitle":"İbadetler"}},
+        {"x":7,"y":4,"id":"7-4","text":["Burak Çetin","Beden Eğitimi"],"data":{"headerTitle":"Voleybol"}},
+        {"x":8,"y":4,"id":"8-4","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Doğrular ve Açılar"}},
+        {"x":1,"y":5,"id":"1-5","text":["Can Yıldız","Sosyal Bilgiler"],"data":{"headerTitle":"İnsanlar ve Yerler"}},
+        {"x":2,"y":5,"id":"2-5","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Madde ve Isı"}},
+        {"x":3,"y":5,"id":"3-5","text":["Mehmet Demir","Türkçe"],"data":{"headerTitle":"Yazım Kuralları"}},
+        {"x":4,"y":5,"id":"4-5","text":["Zeynep Aydın","İngilizce"],"data":{"headerTitle":"Dreams"}},
+        {"x":5,"y":5,"id":"5-5","text":["Ayşe Yılmaz","Matematik"],"data":{"headerTitle":"Cebirsel İfadeler"}},
+        {"x":6,"y":5,"id":"6-5","text":["Selin Aksoy","Görsel Sanatlar"],"data":{"headerTitle":"Perspektif"}},
+        {"x":7,"y":5,"id":"7-5","text":["Murat Koç","Din Kültürü"],"data":{"headerTitle":"Peygamberler"}},
+        {"x":8,"y":5,"id":"8-5","text":["Elif Kaya","Fen Bilimleri"],"data":{"headerTitle":"Elektrik Devreleri"}}
+      ]}
+    }
+    """#
 }
 
 private struct ScreenshotProtectedSectionView: View {
     let section: AppSection?
 
     var body: some View {
-        ContentUnavailableView {
-            Label(sectionTitle, systemImage: sectionImage)
-        } description: {
-            Text("Ekran görüntüsü modu açıkken kişisel bilgiler gizlenir.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: sectionImage)
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                        .frame(width: 38, height: 38)
+                        .appCardSurface(cornerRadius: 9)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sectionTitle)
+                            .font(.title2.weight(.semibold))
+                    }
+                }
+
+                LazyVStack(spacing: 10) {
+                    ForEach(records) { record in
+                        ScreenshotRecordCard(record: record)
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 820, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
         .navigationTitle(sectionTitle)
+    }
+
+    private var records: [ScreenshotRecord] {
+        switch section {
+        case .schedule:
+            [
+                .init(icon: "1.circle.fill", title: "Matematik", subtitle: "09.00–09.40", detail: "Derslik 7-A"),
+                .init(icon: "2.circle.fill", title: "Türkçe", subtitle: "09.50–10.30", detail: "Derslik 7-A"),
+                .init(icon: "3.circle.fill", title: "Fen Bilimleri", subtitle: "10.40–11.20", detail: "Fen Laboratuvarı")
+            ]
+        case .practiceExams:
+            [
+                .init(icon: "doc.text.fill", title: "Genel Deneme Sınavı", subtitle: "18 Ekim 2026", detail: "462,50 puan · 78,25 net"),
+                .init(icon: "doc.text.fill", title: "Sayısal Değerlendirme", subtitle: "11 Ekim 2026", detail: "448,75 puan · 74,50 net"),
+                .init(icon: "doc.text.fill", title: "Haftalık Deneme", subtitle: "4 Ekim 2026", detail: "455,00 puan · 76,00 net")
+            ]
+        case .taramalar:
+            [
+                .init(icon: "checklist", title: "Matematik Tarama", subtitle: "20 soru", detail: "18 doğru · 1 yanlış · 1 boş"),
+                .init(icon: "checklist", title: "Fen Bilimleri Tarama", subtitle: "15 soru", detail: "13 doğru · 2 yanlış"),
+                .init(icon: "checklist", title: "Türkçe Tarama", subtitle: "20 soru", detail: "17 doğru · 3 yanlış")
+            ]
+        case .homework:
+            [
+                .init(icon: "book.closed.fill", title: "Problem Çalışması", subtitle: "Matematik", detail: "Teslim edildi"),
+                .init(icon: "book.closed.fill", title: "Paragraf Soruları", subtitle: "Türkçe", detail: "28 Ekim'e kadar"),
+                .init(icon: "book.closed.fill", title: "Kuvvet ve Hareket", subtitle: "Fen Bilimleri", detail: "Değerlendirilmedi")
+            ]
+        case .foodList:
+            [
+                .init(icon: "fork.knife", title: "Mercimek Çorbası", subtitle: "Bugünün menüsü", detail: "Başlangıç"),
+                .init(icon: "fork.knife", title: "Fırında Tavuk", subtitle: "Bugünün menüsü", detail: "Ana yemek"),
+                .init(icon: "fork.knife", title: "Bulgur Pilavı", subtitle: "Bugünün menüsü", detail: "Yardımcı yemek")
+            ]
+        case .messages:
+            [
+                .init(icon: "envelope.fill", title: "Okul Yönetimi", subtitle: "Haftalık bilgilendirme", detail: "Bugün, 15.30"),
+                .init(icon: "envelope.fill", title: "Sınıf Rehber Öğretmeni", subtitle: "Ders programı hakkında", detail: "Dün, 17.45")
+            ]
+        case .attendance:
+            [
+                .init(icon: "checkmark.circle.fill", title: "Ekim ayı özeti", subtitle: "Devamsızlık bulunmuyor", detail: "0 tam gün · 0 yarım gün"),
+                .init(icon: "calendar", title: "Dönem özeti", subtitle: "Düzenli katılım", detail: "Son güncelleme: 24 Ekim")
+            ]
+        case .teachers:
+            [
+                .init(icon: "person.crop.circle.fill", title: "Ayşe Yılmaz", subtitle: "Matematik Öğretmeni", detail: "7-A sınıfı"),
+                .init(icon: "person.crop.circle.fill", title: "Mehmet Demir", subtitle: "Türkçe Öğretmeni", detail: "7-A sınıfı"),
+                .init(icon: "person.crop.circle.fill", title: "Elif Kaya", subtitle: "Fen Bilimleri Öğretmeni", detail: "7-A sınıfı")
+            ]
+        case .announcements:
+            [
+                .init(icon: "megaphone.fill", title: "Veli Bilgilendirme Toplantısı", subtitle: "Okul Yönetimi", detail: "30 Ekim 2026 · Konferans Salonu"),
+                .init(icon: "megaphone.fill", title: "Kulüp Çalışmaları Başlıyor", subtitle: "Öğrenci İşleri", detail: "Başvurular cuma günü sona eriyor"),
+                .init(icon: "megaphone.fill", title: "Kütüphane Çalışma Saatleri", subtitle: "Kütüphane Birimi", detail: "Hafta içi 08.30–17.30")
+            ]
+        case .events:
+            [
+                .init(icon: "calendar.badge.clock", title: "Bilim Şenliği", subtitle: "5 Kasım 2026", detail: "Okul Bahçesi"),
+                .init(icon: "calendar.badge.clock", title: "Kitap Söyleşisi", subtitle: "12 Kasım 2026", detail: "Konferans Salonu")
+            ]
+        case .profile:
+            [
+                .init(icon: "person.crop.circle.fill", title: "Göktürk", subtitle: "7-A sınıfı", detail: "Öğrenci no: 1234"),
+                .init(icon: "building.2.fill", title: "Özel Tedem Ortaokulu", subtitle: "2026–2027 Eğitim Yılı", detail: "Ortaokul öğrencisi")
+            ]
+        case .home, nil:
+            []
+        }
     }
 
     private var sectionTitle: String {
@@ -1209,6 +1701,46 @@ private struct ScreenshotProtectedSectionView: View {
         case .home: "house"
         case nil: "eye.slash"
         }
+    }
+}
+
+private struct ScreenshotRecord: Identifiable {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let detail: String
+
+    var id: String { "\(title)|\(subtitle)" }
+}
+
+private struct ScreenshotRecordCard: View {
+    let record: ScreenshotRecord
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: record.icon)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 34)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.title)
+                    .font(.headline)
+                Text(record.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(record.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCardSurface(cornerRadius: 10)
+        .accessibilityElement(children: .combine)
     }
 }
 

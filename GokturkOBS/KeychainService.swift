@@ -4,6 +4,7 @@ import Security
 struct StoredCredentials {
     let username: String
     let password: String
+    let portalURL: String
 }
 
 enum KeychainServiceError: LocalizedError {
@@ -23,16 +24,18 @@ enum KeychainServiceError: LocalizedError {
 
 struct KeychainService {
     private let service = "com.gokturk.GokturkOBS.credentials"
+    private let activeAccountKey = "activeCredentialAccount"
 
-    func save(username: String, password: String) throws {
+    func save(username: String, password: String, portalURL: String) throws {
         guard let passwordData = password.data(using: .utf8) else {
             throw KeychainServiceError.invalidStoredCredentials
         }
 
+        let accountKey = "\(portalURL)|\(username)"
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: username
+            kSecAttrAccount as String: accountKey
         ]
         let attributes: [String: Any] = [
             kSecValueData as String: passwordData,
@@ -51,41 +54,20 @@ struct KeychainService {
             throw KeychainServiceError.operationFailed(status)
         }
 
-        let oldItemsQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true
-        ]
-        var result: CFTypeRef?
-        let queryStatus = SecItemCopyMatching(oldItemsQuery as CFDictionary, &result)
-        guard queryStatus == errSecSuccess || queryStatus == errSecItemNotFound else {
-            throw KeychainServiceError.operationFailed(queryStatus)
-        }
-        let items = result as? [[String: Any]] ?? []
-        for item in items {
-            guard let account = item[kSecAttrAccount as String] as? String,
-                  account != username else { continue }
-            let deleteQuery: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-                kSecAttrAccount as String: account
-            ]
-            let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-                throw KeychainServiceError.operationFailed(deleteStatus)
-            }
-        }
+        UserDefaults.standard.set(accountKey, forKey: activeAccountKey)
     }
 
     func load() throws -> StoredCredentials? {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnAttributes as String: true,
             kSecReturnData as String: true
         ]
+        if let activeAccount = UserDefaults.standard.string(forKey: activeAccountKey) {
+            query[kSecAttrAccount as String] = activeAccount
+        }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound {
@@ -95,22 +77,29 @@ struct KeychainService {
             throw KeychainServiceError.operationFailed(status)
         }
         guard let item = result as? [String: Any],
-              let username = item[kSecAttrAccount as String] as? String,
+              let accountKey = item[kSecAttrAccount as String] as? String,
               let passwordData = item[kSecValueData as String] as? Data,
               let password = String(data: passwordData, encoding: .utf8) else {
             throw KeychainServiceError.invalidStoredCredentials
         }
-        return StoredCredentials(username: username, password: password)
+        let separator = accountKey.lastIndex(of: "|")
+        let portalURL = separator.map { String(accountKey[..<$0]) } ?? (UserDefaults.standard.string(forKey: "portalBaseURL") ?? "https://tedemkolejiobs.com")
+        let username = separator.map { String(accountKey[accountKey.index(after: $0)...]) } ?? accountKey
+        return StoredCredentials(username: username, password: password, portalURL: portalURL)
     }
 
     func delete() throws {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service
         ]
+        if let activeAccount = UserDefaults.standard.string(forKey: activeAccountKey) {
+            query[kSecAttrAccount as String] = activeAccount
+        }
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainServiceError.operationFailed(status)
         }
+        UserDefaults.standard.removeObject(forKey: activeAccountKey)
     }
 }

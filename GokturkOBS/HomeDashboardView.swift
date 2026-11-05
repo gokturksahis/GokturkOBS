@@ -6,11 +6,7 @@ struct HomeDashboardView: View {
     @Binding var selection: AppSection?
 
     var body: some View {
-        Group {
-            if model.isScreenshotMode {
-                ScreenshotHomeDashboardView(selection: $selection)
-            } else {
-                GeometryReader { proxy in
+        GeometryReader { proxy in
                     let usesCompactCards = shouldUseCompactCards(availableHeight: proxy.size.height)
 
                     ScrollView {
@@ -85,8 +81,6 @@ struct HomeDashboardView: View {
                         .frame(maxWidth: 980, alignment: .leading)
                         .frame(maxWidth: .infinity, alignment: .top)
                     }
-                }
-            }
         }
         .groupBoxStyle(DashboardGroupBoxStyle())
         .navigationTitle("Ana Sayfa")
@@ -130,14 +124,14 @@ private struct ScreenshotHomeDashboardView: View {
                         ScreenshotSummaryCard(
                             title: "Bugünün Ana Yemeği",
                             systemImage: "fork.knife",
-                            placeholder: "Yemek bilgisi",
-                            detail: "Menü içeriği gizlendi"
+                            placeholder: "Fırında Tavuk",
+                            detail: "Bulgur pilavı ve mevsim salata"
                         ) { selection = .foodList }
                         ScreenshotSummaryCard(
                             title: "Aktif Ödevler",
                             systemImage: "checklist",
-                            placeholder: "Ödev bilgisi",
-                            detail: "Ödev ayrıntıları gizlendi"
+                            placeholder: "3 Aktif Ödev",
+                            detail: "En yakın teslim: 28 Ekim"
                         ) { selection = .homework }
                     }
 
@@ -145,14 +139,14 @@ private struct ScreenshotHomeDashboardView: View {
                         ScreenshotSummaryCard(
                             title: "Bugünün Ana Yemeği",
                             systemImage: "fork.knife",
-                            placeholder: "Yemek bilgisi",
-                            detail: "Menü içeriği gizlendi"
+                            placeholder: "Fırında Tavuk",
+                            detail: "Bulgur pilavı ve mevsim salata"
                         ) { selection = .foodList }
                         ScreenshotSummaryCard(
                             title: "Aktif Ödevler",
                             systemImage: "checklist",
-                            placeholder: "Ödev bilgisi",
-                            detail: "Ödev ayrıntıları gizlendi"
+                            placeholder: "3 Aktif Ödev",
+                            detail: "En yakın teslim: 28 Ekim"
                         ) { selection = .homework }
                     }
                 }
@@ -173,18 +167,18 @@ private struct ScreenshotDashboardHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Merhaba Öğrenci")
+            Text("Merhaba Göktürk")
                 .font(.largeTitle.bold())
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Label("Ekran görüntüsü modu açık", systemImage: "eye.slash.fill")
+                    Text("Bugün okulda neler var?")
                     Spacer(minLength: 12)
-                    Text("SINIF / ÖĞRENCİ NO")
+                    Text("7-A / 1234")
                         .font(.subheadline.weight(.medium).monospaced())
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("Ekran görüntüsü modu açık", systemImage: "eye.slash.fill")
-                    Text("SINIF / ÖĞRENCİ NO")
+                    Text("Bugün okulda neler var?")
+                    Text("7-A / 1234")
                         .font(.subheadline.weight(.medium).monospaced())
                 }
             }
@@ -233,20 +227,20 @@ private struct ScreenshotScheduleSection: View {
         Button(action: action) {
             GroupBox("Bugünün Ders Programı") {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(1...4, id: \.self) { lessonNumber in
+                    ForEach(screenshotLessons) { lesson in
                         HStack(spacing: 12) {
-                            Text("\(lessonNumber).")
+                            Text("\(lesson.number).")
                                 .font(.caption.weight(.medium).monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .frame(minWidth: 24, alignment: .leading)
-                            Text("Ders bilgisi")
+                            Text(lesson.name)
                             Spacer()
-                            Text("--:--–--:--")
+                            Text(lesson.time)
                                 .font(.callout.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 8)
-                        if lessonNumber < 4 { Divider() }
+                        if lesson.id != screenshotLessons.last?.id { Divider() }
                     }
                     Label("Ders Programına Git", systemImage: "chevron.right")
                         .font(.caption)
@@ -258,6 +252,22 @@ private struct ScreenshotScheduleSection: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private var screenshotLessons: [ScreenshotLesson] {
+        [
+            .init(number: 1, name: "Matematik", time: "09.00–09.40"),
+            .init(number: 2, name: "Türkçe", time: "09.50–10.30"),
+            .init(number: 3, name: "Fen Bilimleri", time: "10.40–11.20"),
+            .init(number: 4, name: "İngilizce", time: "11.30–12.10")
+        ]
+    }
+}
+
+private struct ScreenshotLesson: Identifiable {
+    let number: Int
+    let name: String
+    let time: String
+    var id: Int { number }
 }
 
 private struct ScreenshotExamSection: View {
@@ -267,9 +277,9 @@ private struct ScreenshotExamSection: View {
         Button(action: action) {
             GroupBox("Son Deneme Sınavı") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Sınav bilgisi")
+                    Text("Genel Deneme Sınavı")
                         .font(.headline)
-                    Text("Sınav sonuçları gizlendi")
+                    Text("18 Ekim 2026 · 462,50 puan · 78,25 net")
                         .foregroundStyle(.secondary)
                     Label("Deneme Sınavlarına Git", systemImage: "chevron.right")
                         .font(.caption)
@@ -1065,14 +1075,7 @@ private struct DashboardGroupBoxStyle: GroupBoxStyle {
         }
         .padding(isCompact ? 13 : 18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            .regularMaterial,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.separator.opacity(0.45), lineWidth: 1)
-        }
+        .appCardSurface(cornerRadius: 12)
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

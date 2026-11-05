@@ -1227,6 +1227,17 @@ private struct FoodMenuItemRow: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            Button {
+                openYemeksepeti()
+            } label: {
+                Label("Sipariş ver", systemImage: "bag")
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("\(name) için Yemeksepeti'nde ara")
+            .accessibilityLabel("\(name) için Yemeksepeti'nde sipariş ara")
+
             Text("\(number)")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.tertiary)
@@ -1234,8 +1245,18 @@ private struct FoodMenuItemRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(number). \(name)")
+        .accessibilityElement(children: .contain)
+    }
+
+    private func openYemeksepeti() {
+        var components = URLComponents(string: "https://www.yemeksepeti.com/restaurants/new")
+        components?.queryItems = [URLQueryItem(name: "query", value: orderSearchName)]
+        guard let url = components?.url else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private var orderSearchName: String {
+        FoodMealSearchStrategy.candidates(for: name, limit: 1).first ?? name
     }
 }
 

@@ -30,14 +30,17 @@ struct AttendanceSnapshot {
 
 extension OBSClient {
     func loadInbox() async throws -> [PortalRecord] {
-        try await webJSON(path: "obsapi/mail/getInbox", method: "GET").records(at: ["data", "mail"])
+        if usesScreenshotData { return ScreenshotData.inbox }
+        return try await webJSON(path: "obsapi/mail/getInbox", method: "GET").records(at: ["data", "mail"])
     }
 
     func loadSentMail() async throws -> [PortalRecord] {
-        try await webJSON(path: "obsapi/mail/getSentMail", method: "GET").records(at: ["data", "mail"])
+        if usesScreenshotData { return ScreenshotData.sent }
+        return try await webJSON(path: "obsapi/mail/getSentMail", method: "GET").records(at: ["data", "mail"])
     }
 
     func loadMailContent(id: String) async throws -> PortalRecord {
+        if usesScreenshotData, let record = (ScreenshotData.inbox + ScreenshotData.sent).first(where: { $0.id == id }) { return record }
         let json = try await webJSON(path: "obsapi/mail/getMailContent", fields: [("mailId", id)])
         guard let record = json.record(at: ["data", "mailContent"]) else {
             throw OBSClientError.invalidResponse("Mesaj içeriği okunamadı.")
@@ -72,6 +75,7 @@ extension OBSClient {
     }
 
     func loadAttendance() async throws -> AttendanceSnapshot {
+        if usesScreenshotData { return ScreenshotData.attendance }
         let initial = try await webJSON(path: "pages/student/require/attendanceDashboard.php", fields: [("request", "load-attendance-initial-data")])
         let periods = initial.records(at: ["periods"])
         let periodDescription = periods.first?.string("description") ?? "Aktif Dönem"
@@ -85,17 +89,20 @@ extension OBSClient {
     }
 
     func loadTeachers() async throws -> [PortalRecord] {
-        try await webJSON(path: "pages/student/require/teacherAction.php", fields: [
+        if usesScreenshotData { return ScreenshotData.teachers }
+        return try await webJSON(path: "pages/student/require/teacherAction.php", fields: [
             ("request", "loadMyOwnTeachers")
         ]).records(at: ["data"])
     }
 
     func loadAnnouncements() async throws -> [PortalRecord] {
-        try await loadIndexRecords(key: "announcementList")
+        if usesScreenshotData { return ScreenshotData.announcements }
+        return try await loadIndexRecords(key: "announcementList")
     }
 
     func loadEvents() async throws -> [PortalRecord] {
-        try await loadIndexRecords(key: "eventList")
+        if usesScreenshotData { return ScreenshotData.events }
+        return try await loadIndexRecords(key: "eventList")
     }
 
     private func loadIndexRecords(key: String) async throws -> [PortalRecord] {
@@ -474,6 +481,10 @@ private struct MessageDetailView: View {
 
     @MainActor private func load() async {
         guard !isLoading, detail == nil else { return }
+        if summary.string("mailContent", "content") != nil {
+            detail = summary
+            return
+        }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
