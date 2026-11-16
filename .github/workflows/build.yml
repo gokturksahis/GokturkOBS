@@ -3,10 +3,13 @@ name: Build and Release GokturkOBS (unsigned)
 on:
   push:
     branches: [main]
-    tags:
-      - 'v*'
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.15.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,6 +22,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and push version tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $VERSION (expected e.g. 1.15.0)"
+            exit 1
+          fi
+          TAG="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "GokturkOBS $TAG"
+          git push origin "$TAG"
+          echo "Created tag $TAG"
 
       - name: Remove missing legacy resources from project
         run: |
@@ -68,12 +95,19 @@ jobs:
           retention-days: 14
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        if: github.event_name == 'workflow_dispatch' || (startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="v$VERSION"
+          else
+            TAG="$REF_NAME"
+          fi
           gh release create "$TAG" "$RUNNER_TEMP/GokturkOBS-macOS-unsigned.dmg" \
             --title "GokturkOBS $TAG" \
             --generate-notes \
