@@ -1,5 +1,5 @@
 import SwiftUI
-import AppKit
+// PlatformImage is defined in PlatformCompat.swift
 
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system
@@ -28,7 +28,7 @@ struct AppSidebarView: View {
     @Binding var selection: AppSection?
     @State private var examsExpanded = true
     let profile: StudentProfile?
-    let profileImage: NSImage?
+    let profileImage: PlatformImage?
     let isLoadingProfile: Bool
     @Binding var isScreenshotMode: Bool
     let selectProfile: () -> Void
@@ -65,6 +65,10 @@ struct AppSidebarView: View {
                         .tag(AppSection.announcements)
                     Label("Etkinlikler", systemImage: "calendar.day.timeline.left")
                         .tag(AppSection.events)
+                    if UserDefaults.standard.bool(forKey: "appleIntelligenceEnabled") {
+                        Label("Apple Intelligence", systemImage: "apple.intelligence")
+                            .tag(AppSection.appleIntelligence)
+                    }
                 }
             }
 
@@ -84,7 +88,7 @@ struct AppSidebarView: View {
 
 private struct SidebarProfileView: View {
     let name: String?
-    let image: NSImage?
+    let image: PlatformImage?
     let isLoading: Bool
     @Binding var isScreenshotMode: Bool
     let action: () -> Void
@@ -122,6 +126,13 @@ private struct SidebarProfileView: View {
                     Label("Hesap Değiştir", systemImage: "person.crop.circle.badge.arrow.trianglehead.counterclockwise")
                 }
                 Divider()
+                Toggle(isOn: Binding(
+                    get: { UserDefaults.standard.bool(forKey: "appleIntelligenceEnabled") },
+                    set: { UserDefaults.standard.set($0, forKey: "appleIntelligenceEnabled") }
+                )) {
+                    Label("Apple Intelligence", systemImage: "apple.intelligence")
+                }
+                Divider()
                 Toggle(isOn: $isScreenshotMode) {
                     Label("Ekran Görüntüsü Modu", systemImage: "eye.slash")
                 }
@@ -155,7 +166,7 @@ private struct SidebarProfileView: View {
 
 struct ProfileDetailView: View {
     let profile: StudentProfile?
-    let image: NSImage?
+    let image: PlatformImage?
 
     var body: some View {
         if let profile {
@@ -174,7 +185,7 @@ struct ProfileDetailView: View {
 
 private struct ProfileDetailContent: View {
     let profile: StudentProfile
-    let image: NSImage?
+    let image: PlatformImage?
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
 
     var body: some View {
@@ -214,10 +225,11 @@ private struct ProfileDetailContent: View {
 
 private struct FullProfileImage: View {
     let name: String
-    let image: NSImage?
+    let image: PlatformImage?
 
     var body: some View {
         if let image {
+            #if os(macOS)
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
@@ -225,6 +237,15 @@ private struct FullProfileImage: View {
                 .padding(8)
                 .appCardSurface(cornerRadius: 14)
                 .accessibilityLabel("\(name) profil fotoğrafı")
+            #else
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 260, maxHeight: 320)
+                .padding(8)
+                .appCardSurface(cornerRadius: 14)
+                .accessibilityLabel("\(name) profil fotoğrafı")
+            #endif
         } else {
             ProfileAvatarView(name: name, image: nil, size: 112)
         }
@@ -233,17 +254,26 @@ private struct FullProfileImage: View {
 
 private struct ProfileAvatarView: View {
     let name: String?
-    let image: NSImage?
+    let image: PlatformImage?
     let size: CGFloat
 
     var body: some View {
         if let image {
+            #if os(macOS)
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: size, height: size)
                 .clipShape(Circle())
                 .accessibilityHidden(true)
+            #else
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+            #endif
         } else {
             ZStack {
                 Circle()

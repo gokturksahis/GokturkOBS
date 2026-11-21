@@ -404,7 +404,7 @@ private struct FoodSummaryCard: View {
         } ?? false
         return FoodDashboardResolver.currentOrNextMeal(
             in: days,
-            beginWithNextDay: schoolDayEnded
+            beginWithNextDay: false
         )
     }
 
@@ -485,7 +485,7 @@ private struct FoodSummaryContent: View {
                 } ?? false
                 if let meal = FoodDashboardResolver.currentOrNextMeal(
                     in: days,
-                    beginWithNextDay: schoolDayEnded
+                    beginWithNextDay: false
                 ) {
                     Text(meal.mainDish)
                         .font(.title3.weight(.semibold))
@@ -536,6 +536,25 @@ enum FoodDashboardResolver {
         date: Date = Date(),
         calendar: Calendar = .current
     ) -> FoodMenuDay? {
+        // Önce tam tarih eşleşmesi dene
+        if let dated = days.first(where: { day in
+            guard let headingDate = FoodMenuParser.date(in: day.heading) else { return false }
+            return calendar.isDate(headingDate, inSameDayAs: date)
+        }) {
+            return dated
+        }
+
+        // Tarih eşleşmesi yoksa, en yakın gelecek tarihi bul
+        let futureDays = days.compactMap { day -> (FoodMenuDay, Date)? in
+            guard let headingDate = FoodMenuParser.date(in: day.heading) else { return nil }
+            guard headingDate >= calendar.startOfDay(for: date) else { return nil }
+            return (day, headingDate)
+        }
+        if let nearest = futureDays.min(by: { $0.1 < $1.1 }) {
+            return nearest.0
+        }
+
+        // Son çare: weekday matching
         let weekday = calendar.component(.weekday, from: date)
         guard (2...6).contains(weekday) else { return nil }
         let names = ["", "pazar", "pazartesi", "salı", "çarşamba", "perşembe", "cuma", "cumartesi"]
@@ -553,10 +572,15 @@ enum FoodDashboardResolver {
     }
 
     static func mainDish(in day: FoodMenuDay) -> String? {
-        guard day.items.count > 1 else { return nil }
-        let first = normalize(day.items[0])
-        guard first.contains("corba") || first.contains("soup") else { return nil }
-        return day.items[1]
+        guard !day.items.isEmpty else { return nil }
+        // Çorba varsa ondan sonraki yemeği ana yemek olarak al
+        let normalizedItems = day.items.map { normalize($0) }
+        if let soupIndex = normalizedItems.firstIndex(where: { $0.contains("corba") || $0.contains("soup") }),
+           soupIndex + 1 < day.items.count {
+            return day.items[soupIndex + 1]
+        }
+        // Çorba yoksa ilk yemeği al
+        return day.items[0]
     }
 
     private static func normalize(_ value: String) -> String {

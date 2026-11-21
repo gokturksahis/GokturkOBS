@@ -10,6 +10,11 @@
 		870729BD30769BA100CB71A2 /* foodList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870729BC30769BA100CB71A2 /* foodList.swift */; };
 		870729BF30769F9D00CB71A2 /* SidebarProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870729BE30769F9D00CB71A2 /* SidebarProfileView.swift */; };
 		870729C130769FC900CB71A2 /* StudentProfileHTMLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870729C030769FC900CB71A2 /* StudentProfileHTMLParser.swift */; };
+		87472000309E3823008292CD /* AppleIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87471FFF309E3823008292CD /* AppleIntelligence.swift */; };
+		87472002309E3CCE008292CD /* (search) in Resources */ = {isa = PBXBuildFile; fileRef = 87472001309E3CCE008292CD /* (search) */; };
+		87472010309E3823008292CD /* AppleIntelligenceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87472011309E3823008292CD /* AppleIntelligenceView.swift */; };
+		87472020309E3823008292CD /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87472021309E3823008292CD /* PlatformCompat.swift */; };
+		87472030309E3823008292CD /* ScheduleExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87472031309E3823008292CD /* ScheduleExport.swift */; };
 		877270F730753F28001C9D63 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 877270F530753F28001C9D63 /* README.md */; };
 		877270F830753F28001C9D63 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 877270EE30753F28001C9D63 /* Assets.xcassets */; };
 		877270F930753F28001C9D63 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 877270F130753F28001C9D63 /* LICENSE */; };
@@ -19,6 +24,10 @@
 		877270FD30753F28001C9D63 /* login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877270F230753F28001C9D63 /* login.swift */; };
 		877270FE30753F28001C9D63 /* homework.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877270F030753F28001C9D63 /* homework.swift */; };
 		877270FF30753F28001C9D63 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8772710030753F28001C9D63 /* KeychainService.swift */; };
+		87D69D30309CCB8F00AF9A73 /* CafeteriaIntelligenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D69D2F309CCB8F00AF9A73 /* CafeteriaIntelligenceModels.swift */; };
+		87D69D32309CCBA500AF9A73 /* MenuSourceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D69D31309CCBA500AF9A73 /* MenuSourceService.swift */; };
+		87D69D34309CCBB000AF9A73 /* MenuContentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D69D33309CCBB000AF9A73 /* MenuContentExtractor.swift */; };
+		87D69D36309CCBD200AF9A73 /* MenuAIParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D69D35309CCBD200AF9A73 /* MenuAIParser.swift */; };
 		87FCF78B307AB69500F9AF20 /* TaramalarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FCF78A307AB69500F9AF20 /* TaramalarView.swift */; };
 		87FCF793307AC4AD00F9AF20 /* FoodMenuParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FCF792307AC4AD00F9AF20 /* FoodMenuParser.swift */; };
 		87FCF795307AC4DF00F9AF20 /* PortalFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FCF794307AC4DF00F9AF20 /* PortalFeatures.swift */; };
@@ -31,6 +40,12 @@
 		870729BE30769F9D00CB71A2 /* SidebarProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarProfileView.swift; sourceTree = "<group>"; };
 		870729C030769FC900CB71A2 /* StudentProfileHTMLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentProfileHTMLParser.swift; sourceTree = "<group>"; };
 		870729C630797B1E00CB71A2 /* GokturkOBSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GokturkOBSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		87471FFF309E3823008292CD /* AppleIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligence.swift; sourceTree = "<group>"; };
+		87472001309E3CCE008292CD /* (search) */ = {isa = PBXFileReference; lastKnownFileType = text; path = "(search)"; sourceTree = "<group>"; };
+		87472011309E3823008292CD /* AppleIntelligenceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceView.swift; sourceTree = "<group>"; };
+		87472021309E3823008292CD /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
+		87472031309E3823008292CD /* ScheduleExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleExport.swift; sourceTree = "<group>"; };
+		87472041309E3823008292CD /* GokturkOBS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GokturkOBS.entitlements; sourceTree = "<group>"; };
 		877270ED30753F28001C9D63 /* anadosya.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = anadosya.swift; sourceTree = "<group>"; };
 		877270EE30753F28001C9D63 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		877270EF30753F28001C9D63 /* exams.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = exams.swift; sourceTree = "<group>"; };
@@ -41,6 +56,10 @@
 		877270F430753F28001C9D63 /* MyApp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MyApp-Bridging-Header.h"; sourceTree = "<group>"; };
 		877270F530753F28001C9D63 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		8772710030753F28001C9D63 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		87D69D2F309CCB8F00AF9A73 /* CafeteriaIntelligenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CafeteriaIntelligenceModels.swift; sourceTree = "<group>"; };
+		87D69D31309CCBA500AF9A73 /* MenuSourceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuSourceService.swift; sourceTree = "<group>"; };
+		87D69D33309CCBB000AF9A73 /* MenuContentExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuContentExtractor.swift; sourceTree = "<group>"; };
+		87D69D35309CCBD200AF9A73 /* MenuAIParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuAIParser.swift; sourceTree = "<group>"; };
 		87FCF78A307AB69500F9AF20 /* TaramalarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaramalarView.swift; sourceTree = "<group>"; };
 		87FCF792307AC4AD00F9AF20 /* FoodMenuParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodMenuParser.swift; sourceTree = "<group>"; };
 		87FCF794307AC4DF00F9AF20 /* PortalFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortalFeatures.swift; sourceTree = "<group>"; };
@@ -95,6 +114,7 @@
 			children = (
 				877270F630753F28001C9D63 /* GokturkOBS */,
 				870729C730797B1E00CB71A2 /* GokturkOBSTests */,
+				87472001309E3CCE008292CD /* (search) */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -128,6 +148,15 @@
 				87FCF792307AC4AD00F9AF20 /* FoodMenuParser.swift */,
 				87FCF794307AC4DF00F9AF20 /* PortalFeatures.swift */,
 				87FCF796307AD24D00F9AF20 /* HomeDashboardView.swift */,
+				87D69D2F309CCB8F00AF9A73 /* CafeteriaIntelligenceModels.swift */,
+				87D69D31309CCBA500AF9A73 /* MenuSourceService.swift */,
+				87D69D33309CCBB000AF9A73 /* MenuContentExtractor.swift */,
+				87D69D35309CCBD200AF9A73 /* MenuAIParser.swift */,
+				87471FFF309E3823008292CD /* AppleIntelligence.swift */,
+				87472011309E3823008292CD /* AppleIntelligenceView.swift */,
+				87472021309E3823008292CD /* PlatformCompat.swift */,
+				87472031309E3823008292CD /* ScheduleExport.swift */,
+				87472041309E3823008292CD /* GokturkOBS.entitlements */,
 			);
 			path = GokturkOBS;
 			sourceTree = "<group>";
@@ -218,6 +247,7 @@
 		870729C430797B1E00CB71A2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				87472002309E3CCE008292CD /* (search) in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
@@ -227,17 +257,25 @@
 			isa = PBXSourcesBuildPhase;
 			files = (
 				877270FA30753F28001C9D63 /* anadosya.swift in Sources */,
+				87D69D34309CCBB000AF9A73 /* MenuContentExtractor.swift in Sources */,
 				870729BF30769F9D00CB71A2 /* SidebarProfileView.swift in Sources */,
 				877270FB30753F28001C9D63 /* lSchedule.swift in Sources */,
+				87D69D32309CCBA500AF9A73 /* MenuSourceService.swift in Sources */,
 				870729BD30769BA100CB71A2 /* foodList.swift in Sources */,
 				87FCF78B307AB69500F9AF20 /* TaramalarView.swift in Sources */,
+				87D69D30309CCB8F00AF9A73 /* CafeteriaIntelligenceModels.swift in Sources */,
 				877270FC30753F28001C9D63 /* exams.swift in Sources */,
+				87472000309E3823008292CD /* AppleIntelligence.swift in Sources */,
+				87472010309E3823008292CD /* AppleIntelligenceView.swift in Sources */,
+				87472020309E3823008292CD /* PlatformCompat.swift in Sources */,
+				87472030309E3823008292CD /* ScheduleExport.swift in Sources */,
 				870729C130769FC900CB71A2 /* StudentProfileHTMLParser.swift in Sources */,
 				87FCF793307AC4AD00F9AF20 /* FoodMenuParser.swift in Sources */,
 				87FCF797307AD24D00F9AF20 /* HomeDashboardView.swift in Sources */,
 				87FCF795307AC4DF00F9AF20 /* PortalFeatures.swift in Sources */,
 				877270FD30753F28001C9D63 /* login.swift in Sources */,
 				877270FE30753F28001C9D63 /* homework.swift in Sources */,
+				87D69D36309CCBD200AF9A73 /* MenuAIParser.swift in Sources */,
 				877270FF30753F28001C9D63 /* KeychainService.swift in Sources */,
 			);
 		};
@@ -385,7 +423,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = GokturkOBS;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]" = "";
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphonesimulator*]" = "";
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = GokturkOBS/GokturkOBS.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 2937L6R7J4;
@@ -400,7 +443,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
-				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -416,11 +459,14 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gokturk.gokturkobs;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -431,7 +477,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 2;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -439,8 +485,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = GokturkOBS;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]" = "";
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphonesimulator*]" = "";
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = GokturkOBS;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = GokturkOBS/GokturkOBS.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 2937L6R7J4;
@@ -455,7 +506,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
-				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = YES;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -471,11 +522,14 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gokturk.gokturkobs;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -486,7 +540,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 2;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};

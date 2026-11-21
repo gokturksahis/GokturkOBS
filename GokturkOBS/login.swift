@@ -1,6 +1,5 @@
 import SwiftUI
 import Foundation
-import AppKit
 import Security
 
 struct LoginResponse: Decodable {
@@ -149,7 +148,7 @@ final class OBSClient {
     var currentCookieHeader: String?
     var usesScreenshotData = false
     private(set) var studentProfile: StudentProfile?
-    private var cachedStudentProfileImage: NSImage?
+    private var cachedStudentProfileImage: PlatformImage?
     private var studentProfileTask: Task<StudentProfile, Error>?
     private var mobileAuthenticated = false
     private var mobileStudentType: String?
@@ -207,7 +206,7 @@ final class OBSClient {
     }
 
     private func legacyCookieFileURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Downloads", isDirectory: true)
             .appendingPathComponent("GokturkOBS", isDirectory: true)
             .appendingPathComponent("obs-cookies.txt")
@@ -723,7 +722,7 @@ final class OBSClient {
         return components.path.isEmpty ? nil : components.path
     }
 
-    func loadStudentProfileImage(for profile: StudentProfile) async throws -> NSImage? {
+    func loadStudentProfileImage(for profile: StudentProfile) async throws -> PlatformImage? {
         guard let photoURL = profile.photoURL else {
             verbose("[Profile Photo] No photo URL; using avatar fallback")
             return nil
@@ -764,10 +763,21 @@ final class OBSClient {
             verbose("[Profile Photo] Response data is empty")
             throw OBSClientError.invalidResponse("Profil fotoğrafı boş.")
         }
-        guard let image = NSImage(data: data), image.isValid else {
+        guard let image = PlatformImage(data: data) else {
+            verbose("[Profile Photo] PlatformImage decoding failed")
+            throw OBSClientError.invalidResponse("Profil fotoğrafı okunamadı.")
+        }
+        #if os(macOS)
+        guard image.isValid else {
             verbose("[Profile Photo] NSImage decoding failed")
             throw OBSClientError.invalidResponse("Profil fotoğrafı okunamadı.")
         }
+        #else
+        guard image.size.width > 0 && image.size.height > 0 else {
+            verbose("[Profile Photo] UIImage decoding failed")
+            throw OBSClientError.invalidResponse("Profil fotoğrafı okunamadı.")
+        }
+        #endif
 
         verbose("[Profile Photo] Decoded image: \(Int(image.size.width))x\(Int(image.size.height))")
         cachedStudentProfileImage = image

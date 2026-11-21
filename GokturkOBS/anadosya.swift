@@ -53,6 +53,7 @@ final class AppModel: ObservableObject {
     @Published var schedule: LessonSchedule?
     @Published var homework: [Homework] = []
     @Published var examDashboard: ExamDashboard?
+    @Published var announcements: [PortalRecord] = []
     @Published var examReport: ExamSchoolReport?
     @Published var isLoadingExamReport = false
     @Published var examReportError: String?
@@ -69,6 +70,9 @@ final class AppModel: ObservableObject {
     @Published var isLoadingHomeworkDetail = false
     @Published var homeworkDetailError: String?
     @Published var foodListState: FoodListLoadState = .idle
+    @Published private(set) var mealDays: [MealDay] = []
+    @Published private(set) var foodMenuAnalyses: [FoodMenuDay.ID: FoodMenuAnalysisDay] = [:]
+    @Published var isAnalyzingFoodMenu = false
     @Published var foodListSelectedDayID: FoodMenuDay.ID?
     @Published var isLoadingSchedule = true
     @Published var isLoadingHomework = true
@@ -121,6 +125,7 @@ final class AppModel: ObservableObject {
     private var hasStarted = false
     private var attemptedRememberedLogin = false
     private var foodPhotoPrefetchTask: Task<Void, Never>?
+    private var foodMenuAnalysisTask: Task<Void, Never>?
     private var suppressRememberedAccountOnce = false
 
     init() {
@@ -505,8 +510,47 @@ final class AppModel: ObservableObject {
                 guard let document = PDFDocument(data: data) else {
                     throw OBSClientError.invalidResponse("Yemek listesi geçerli bir PDF dosyası değil.")
                 }
-                let days = FoodMenuParser.parse(document)
+                let days: [FoodMenuDay]
+                let cachedAnalyses: [FoodMenuDay.ID: FoodMenuAnalysisDay]
+                if let cached = FoodMenuCacheStore.load(forPDFData: data), !cached.days.isEmpty {
+                    days = cached.days
+                    cachedAnalyses = cached.analyses
+                } else {
+                    var parsedDays = FoodMenuParser.parse(document)
+                    if parsedDays.isEmpty {
+                        let content = try? await MenuContentExtractor.shared.extract(
+                            from: data,
+                            mimeType: "application/pdf"
+                        )
+                        if let content, !content.rawText.isEmpty,
+                           let intelligentDays = try? await AppleIntelligenceService.parseCompleteMenu(
+                               rawText: content.rawText
+                           ),
+                           !intelligentDays.isEmpty {
+                            parsedDays = intelligentDays
+                        }
+                    }
+                    days = parsedDays
+                    cachedAnalyses = [:]
+                    if !days.isEmpty {
+                        FoodMenuCacheStore.save(FoodMenuCache(days: days), forPDFData: data)
+                    }
+                }
+
                 foodListState = .loaded(document, days)
+                Task {
+                    var analyzed: [MealDay] = []
+                    for day in days {
+                        let meal = (try? await AppleIntelligenceService.understandMealDay(day)) ?? MealDay.from(menuDay: day)
+                        analyzed.append(meal)
+                    }
+                    self.mealDays = analyzed
+                }
+                startFoodMenuAnalysis(
+                    for: days,
+                    cachedAnalyses: cachedAnalyses,
+                    pdfData: data
+                )
                 startFoodPhotoPrefetch(for: days)
             case .empty:
                 foodPhotoPrefetchTask?.cancel()
@@ -524,7 +568,7 @@ final class AppModel: ObservableObject {
         } ?? false
         guard let day = FoodDashboardResolver.currentOrNextMeal(
             in: days,
-            beginWithNextDay: schoolDayEnded
+            beginWithNextDay: false
         )?.day else {
             foodPhotoPrefetchTask = nil
             return
@@ -534,6 +578,49 @@ final class AppModel: ObservableObject {
         let menuDayID = day.id
         foodPhotoPrefetchTask = Task(priority: .utility) {
             await prefetchFoodPhotos(for: mealNames, menuDayID: menuDayID)
+        }
+    }
+
+    private func startFoodMenuAnalysis(
+        for days: [FoodMenuDay],
+        cachedAnalyses: [FoodMenuDay.ID: FoodMenuAnalysisDay] = [:],
+        pdfData: Data? = nil
+    ) {
+        foodMenuAnalysisTask?.cancel()
+
+        var available: [FoodMenuDay.ID: FoodMenuAnalysisDay] = [:]
+        for day in days {
+            if let cached = cachedAnalyses[day.id] {
+                available[day.id] = cached
+            }
+        }
+        foodMenuAnalyses = available
+
+        let missing = days.filter { available[$0.id] == nil }
+        guard !missing.isEmpty else {
+            isAnalyzingFoodMenu = false
+            return
+        }
+
+        isAnalyzingFoodMenu = true
+        foodMenuAnalysisTask = Task { [weak self] in
+            var updated = available
+            for day in missing {
+                guard !Task.isCancelled else { return }
+                let analysis = (try? await AppleIntelligenceService.analyzeMenuDay(day))
+                    ?? AppleIntelligenceService.heuristicAnalysis(for: day)
+                guard !Task.isCancelled else { return }
+                updated[day.id] = analysis
+                self?.foodMenuAnalyses = updated
+
+                if analysis.usedAppleIntelligence, let pdfData {
+                    FoodMenuCacheStore.save(
+                        FoodMenuCache(days: days, analyses: updated),
+                        forPDFData: pdfData
+                    )
+                }
+            }
+            self?.isAnalyzingFoodMenu = false
         }
     }
 
@@ -1217,6 +1304,7 @@ enum AppSection: Hashable {
     case teachers
     case announcements
     case events
+    case appleIntelligence
     case profile
 }
 
@@ -1286,6 +1374,8 @@ struct MainView: View {
                         AnnouncementsView(client: model.client)
                     case .events:
                         EventsView(client: model.client)
+                    case .appleIntelligence:
+                        AppleIntelligenceView(model: model)
                     case .profile:
                         ProfileDetailView(
                             profile: model.studentProfile,
@@ -1662,6 +1752,8 @@ private struct ScreenshotProtectedSectionView: View {
                 .init(icon: "person.crop.circle.fill", title: "Göktürk", subtitle: "7-A sınıfı", detail: "Öğrenci no: 1234"),
                 .init(icon: "building.2.fill", title: "Özel Tedem Ortaokulu", subtitle: "2026–2027 Eğitim Yılı", detail: "Ortaokul öğrencisi")
             ]
+        case .appleIntelligence:
+            []
         case .home, nil:
             []
         }
@@ -1679,6 +1771,7 @@ private struct ScreenshotProtectedSectionView: View {
         case .teachers: "Öğretmenlerim"
         case .announcements: "Duyurular"
         case .events: "Etkinlikler"
+        case .appleIntelligence: "Apple Intelligence"
         case .profile: "Profil"
         case .home: "Ana Sayfa"
         case nil: "Bölüm"
@@ -1697,6 +1790,7 @@ private struct ScreenshotProtectedSectionView: View {
         case .teachers: "person.2"
         case .announcements: "megaphone"
         case .events: "calendar.day.timeline.left"
+        case .appleIntelligence: "apple.intelligence"
         case .profile: "person.crop.circle"
         case .home: "house"
         case nil: "eye.slash"

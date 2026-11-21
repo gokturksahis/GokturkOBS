@@ -346,7 +346,7 @@ public struct UserFoodPreference: Identifiable, Codable, Equatable, Hashable, Se
 }
 
 // MARK: - Menu Source Configuration
-public struct MenuSourceConfig: Codable, Equatable, Sendable {
+public nonisolated struct MenuSourceConfig: Codable, Equatable, Sendable {
     public var schoolID: String
     public var schoolName: String
     public var cafeteriaURL: URL?

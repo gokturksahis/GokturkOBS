@@ -9,7 +9,7 @@ import Foundation
 import PDFKit
 import Vision
 #if canImport(AppKit)
-import AppKit
+// PlatformImage is defined in PlatformCompat.swift
 #endif
 
 public struct ExtractedMenuContent: Sendable {
@@ -168,11 +168,19 @@ public final class MenuContentExtractor: Sendable {
     // MARK: - Image OCR Extraction (Vision Framework)
 
     public func extractFromImage(data: Data) async throws -> ExtractedMenuContent {
-        #if canImport(AppKit)
-        guard let nsImage = NSImage(data: data),
-              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        #if canImport(Vision)
+        guard let platformImage = PlatformImage(data: data) else {
             throw NSError(domain: "MenuContentExtractor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Görsel verisi yüklenemedi."])
         }
+        #if os(macOS)
+        guard let cgImage = platformImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw NSError(domain: "MenuContentExtractor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Görsel verisi yüklenemedi."])
+        }
+        #else
+        guard let cgImage = platformImage.cgImage else {
+            throw NSError(domain: "MenuContentExtractor", code: 2, userInfo: [NSLocalizedDescriptionKey: "Görsel verisi yüklenemedi."])
+        }
+        #endif
         #else
         throw NSError(domain: "MenuContentExtractor", code: 3, userInfo: [NSLocalizedDescriptionKey: "Platform görsel işlemeyi desteklemiyor."])
         #endif

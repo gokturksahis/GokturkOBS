@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct OBSResponse: Codable {
     let success: Bool
@@ -240,6 +241,42 @@ struct ScheduleView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { refresh() } label: { Label("Yenile", systemImage: "arrow.clockwise") }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("Renkli Yazdır") {
+                        ScheduleExportHelper.printSchedule(schedule: schedule, colorMode: true)
+                    }
+                    Button("Siyah-Beyaz Yazdır") {
+                        ScheduleExportHelper.printSchedule(schedule: schedule, colorMode: false)
+                    }
+                } label: {
+                    Label("Yazdır", systemImage: "printer")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    if let pdfData = ScheduleExportHelper.createPDF(schedule: schedule, colorMode: true) {
+                        #if os(macOS)
+                        let savePanel = NSSavePanel()
+                        savePanel.allowedContentTypes = [.pdf]
+                        savePanel.nameFieldStringValue = "Ders Programı.pdf"
+                        if savePanel.runModal() == .OK, let url = savePanel.url {
+                            try? pdfData.write(to: url)
+                        }
+                        #else
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Ders Programı.pdf")
+                        try? pdfData.write(to: tempURL)
+                        let activityVC = UIActivityViewController(activityItems: [tempURL], applicationActivities: nil)
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootVC = windowScene.windows.first?.rootViewController {
+                            rootVC.present(activityVC, animated: true)
+                        }
+                        #endif
+                    }
+                } label: {
+                    Label("PDF Olarak Kaydet", systemImage: "doc.badge.plus")
+                }
+            }
         }
     }
 
@@ -267,9 +304,9 @@ struct ScheduleView: View {
     }
 }
 
-private enum ScheduleLayout {
-    static let timeColumnWidth: CGFloat = 80
-    static let dayColumnWidth: CGFloat = 140
+enum ScheduleLayout {
+    static let timeColumnWidth: CGFloat = 60
+    static let dayColumnWidth: CGFloat = 110
     static let columnSpacing: CGFloat = 8
     static let contentPadding: CGFloat = 28
 
@@ -393,7 +430,7 @@ private struct CompactScheduleView: View {
     }
 }
 
-private struct ScheduleHeader: View {
+struct ScheduleHeader: View {
     let periodDescription: String?
 
     var body: some View {
@@ -443,7 +480,7 @@ private struct CompactDayNavigation: View {
     }
 }
 
-private struct ScheduleGrid: View {
+struct ScheduleGrid: View {
     let schedule: LessonSchedule
     let days: [ScheduleDay]
     let dayColumnWidth: CGFloat?

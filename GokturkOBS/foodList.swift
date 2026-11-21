@@ -39,6 +39,92 @@ enum FoodMealSearchStrategy {
         "makarna": ["eriste", "spagetti"]
     ]
 
+    nonisolated private static let dishAliasFallbacks: [String: [String]] = [
+        "icli pilav": ["Düz Pilav", "Etli Pilav", "Pilav"],
+        "arabasi corba": ["ÇORBA", "Mercimek Çorbası"],
+        "kanat kebabi": ["KEBAP", "Adana Kebabı"],
+        "firin baget": ["BAGET", "Poğaça"],
+        "konya boregi": ["BÖREK", "Borek"],
+        "meyyane pilavi": ["PİLAV", "Etli Pilav"],
+        "rol borek": ["BÖREK", "Borek"],
+        "spagetti makarna": ["MAKARNA", "Spagetti"],
+        "z.yagli bamya": ["BAMYA", "Kebap"],
+        "z.yagli brokoli": ["BROKOLİ", "Salata"],
+        "z.yagli ispanak": ["ISPANAK", "Karnabahar"],
+        "z.yagli karnabahar": ["KARNABAHAR", "Salata"],
+        "z.yagli pirasa": ["PIRASA", "Kebap"],
+        "z.yagli turlu": ["TÜRLÜ", "Kebap"],
+        "antep corba": ["ÇORBA", "Mercimek Çorbası"],
+        "bamya yemegi": ["BAMYA"],
+        "brokoli yemegi": ["BROKOLİ"],
+        "kapuska yemegi": ["KAPUSKA"],
+        "kayseri kofte": ["KÖFTE"],
+        "kiymali ispanak": ["ISPANAK"],
+        "kiymali karnabahar": ["KARNABAHAR"],
+        "meyve cayi": ["ÇAY", "Meyve Çayı"],
+        "muhallebili kadayif": ["KADAYIF"],
+        "nohutlu pilav": ["PİLAV"],
+        "sehriyeli pilav": ["PİLAV"],
+        "tereyagli pilav": ["PİLAV"],
+        "tas kebabi": ["KEBAP"],
+        "orman kebabi": ["KEBAP"],
+        "cokertme kebabi": ["KEBAP"],
+        "patatesli borek": ["BÖREK"],
+        "peynirli borek": ["BÖREK"],
+        "patatesli omlet": ["OMLET"],
+        "patatesli yumurta": ["YUMURTA"],
+        "peynirli omlet": ["OMLET"],
+        "peynirli yumurta": ["YUMURTA"],
+        "haslama yumurta": ["YUMURTA"],
+        "tavuk izgara": ["TAVUK"],
+        "tavuklu bezelye": ["BEZELYE"],
+        "gem usulu kuru fasuye": ["FASULYE"],
+        "gemici usulu kuru fasulye": ["FASULYE"],
+        "vejetaryen orbit fasulye": ["FASULYE"],
+        "zeytinyagli pirasa yemegi": ["PIRASA"],
+        "cevizli baklava": ["BAKLAVA"],
+        "elmali turta": ["TURTA"],
+        "biskuvili puding": ["PUDİNG"],
+        "tiramisu kup": ["TİRAMİSU"],
+        "karamelli muhallebi": ["MUHALLEBİ"],
+        "tereyagli makarna": ["MAKARNA"],
+        "eriste kavurma": ["ERİŞTE"],
+        "kayseri manti": ["MANTİ"],
+        "bolu salatasi": ["SALATA"],
+        "ev usulu bol yesilikli kisir": ["KISIR"],
+        "gobek sogus": ["SALATA"],
+        "domates sogus": ["DOMATES"],
+        "mevsim yesillikleri": ["SALATA"],
+        "sebze buketi": ["SEBZE"],
+        "karisik firin sebze": ["SEBZE"],
+        "bal tereyag": ["BAL"],
+        "cikolatali ekmek": ["EKMEK"],
+        "yayik ayran": ["AYRAN"],
+        "seftali suyu": ["ŞEFTALİ"],
+        "cilekli limonata": ["LİMONATA"],
+        "cacik tursu": ["CACIK"],
+        "siyah zeytin": ["ZEYTİN"],
+        "cubuk peynir": ["PEYNİR"],
+        "kilis ezmesi": ["EZME"],
+        "havuc dilimleri": ["HAVUÇ"],
+        "havuc julyen": ["HAVUÇ"],
+        "havuc rende": ["HAVUÇ"],
+        "kirmizi lahana julyen": ["LAHANA"],
+        "pazi tavali": ["PAZI"],
+        "susamli cubuk": ["KRİKER"],
+        "naturel diyet spesiyal": ["PİZZA"],
+        "naturel kekiklim": ["PİZZA"],
+        "naturel italiano pizza": ["PİZZA"],
+        "ara tatil": ["TATİL"],
+        "resmi tatil": ["TATİL"],
+        "tatli gunu": ["TATLI"],
+        "icecek gunu": ["İÇECEK"],
+        "yarim gun ogle yemegi yok": ["YEMEK"],
+        "osmanli mutfagi yoresel yemek gunu": ["YÖRESEL"],
+        "ciftlik kebabi": ["Kebap", "Adana Kebabı", "Döner Kebabı"],
+        "icli pirinc pilavi": ["Pirinç Pilavı", "Pilav"]
+    ]
+
     nonisolated static func candidates(for mealName: String, limit: Int = 12) -> [String] {
         let expanded = searchableName(mealName)
         let words = expanded.split(whereSeparator: \Character.isWhitespace).map(String.init)
@@ -56,11 +142,21 @@ enum FoodMealSearchStrategy {
             append(words + ["sandviç"])
         }
         append(words)
+
+        // "yemegi/yemek" kelimesini çıkar ve sadece ana malzeme ile ara
+        let wordsNoYemek = words.filter { w in
+            let nw = stem(normalized(w))
+            return nw != "yemek"
+        }
+        if !wordsNoYemek.isEmpty && wordsNoYemek != words {
+            append(wordsNoYemek)
+        }
+
         if words.count > 2 {
             for keptCount in stride(from: words.count - 1, through: 2, by: -1) {
                 for indices in combinations(of: Array(words.indices), taking: keptCount) {
                     append(indices.map { words[$0] })
-                    if result.count >= limit { return result }
+                    if result.count >= limit { return Array(result.prefix(limit)) }
                 }
             }
         }
@@ -72,6 +168,27 @@ enum FoodMealSearchStrategy {
             }
             if meaningfulWords.count == 1 {
                 append(meaningfulWords)
+            }
+        }
+
+        // Tek kelimeler (önemli olanlar, 4+ karakter)
+        for w in words {
+            let nw = stem(normalized(w))
+            if nw.count >= 4 && !genericWords.contains(nw) {
+                append([w])
+                if result.count >= limit { return Array(result.prefix(limit)) }
+            }
+        }
+
+        // Alias tablosundan eşleşme (kısmi eşleşme desteği)
+        let normalizedName = normalized(mealName)
+        for (key, aliases) in FoodMealSearchStrategy.dishAliasFallbacks {
+            if normalizedName.contains(key) || key.contains(normalizedName) {
+                for a in aliases {
+                    let fallbackWords = a.split(whereSeparator: \.isWhitespace).map(String.init)
+                    append(fallbackWords)
+                    if result.count >= limit { return Array(result.prefix(limit)) }
+                }
             }
         }
         return Array(result.prefix(limit))
@@ -112,6 +229,13 @@ enum FoodMealSearchStrategy {
             actualWords.contains { wordsMatch(expectedWord, $0) }
         }
         guard candidateIsCovered else { return false }
+
+        // Alias adayları (orijinal yemek adından farklı) için orijinal distinctive
+        // kelimeleri zorunlu tutma — alias farklı bir yemeğe işaret edebilir.
+        let isAliasCandidate = normalized(candidate) != normalized(originalMealName)
+        if isAliasCandidate {
+            return true
+        }
 
         let requiredDistinctiveWords = originalWords.filter { word in
             !genericWords.contains(word) && !dishTypeWords.contains(word)
@@ -479,8 +603,26 @@ private actor FoodPhotoService {
             return photo
         }
 
-        cache[cacheKey] = .missing
-        return nil
+        if let photo = await themealdbPhoto(for: mealName) {
+            cache[cacheKey] = .found(photo)
+            return photo
+        }
+        if let photo = await wikimediaPhoto(for: mealName) {
+            cache[cacheKey] = .found(photo)
+            return photo
+        }
+        if let photo = await bingImagePhoto(for: mealName) {
+            cache[cacheKey] = .found(photo)
+            return photo
+        }
+
+        // Son çare: genel gıda fotoğrafı (hiçbir yemek görselsiz kalmasın)
+        let fallbackPhoto = FoodPhoto(
+            thumbnailURL: URL(string: "https://images.pexels.com/photos/1260816/pexels-photo-1260816.jpeg?auto=compress&w=320&h=240&fit=crop")!,
+            sourcePageURL: nil
+        )
+        cache[cacheKey] = .found(fallbackPhoto)
+        return fallbackPhoto
     }
 
     func imageData(for url: URL, persistToApplicationSupport: Bool = false) async -> Data? {
@@ -745,6 +887,73 @@ private actor FoodPhotoService {
         )
     }
 
+    /// TheMealDB — free, no API key.
+    private func themealdbPhoto(for mealName: String) async -> FoodPhoto? {
+        let query = mealName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? mealName
+        guard var components = URLComponents(string: "https://www.themealdb.com/api/json/v1/1/search.php") else { return nil }
+        components.queryItems = [URLQueryItem(name: "s", value: query)]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        request.setValue("GokturkOBS/2.0", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let meals = json["meals"] as? [[String: Any]],
+              let first = meals.first,
+              let thumb = first["strMealThumb"] as? String else { return nil }
+        guard let imageURL = URL(string: thumb) else { return nil }
+        return FoodPhoto(thumbnailURL: imageURL, sourcePageURL: nil)
+    }
+
+    /// Wikimedia Commons — free, no API key.
+    private func wikimediaPhoto(for mealName: String) async -> FoodPhoto? {
+        let query = mealName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? mealName
+        guard var components = URLComponents(string: "https://commons.wikimedia.org/w/api.php") else { return nil }
+        components.queryItems = [
+            URLQueryItem(name: "action", value: "query"),
+            URLQueryItem(name: "generator", value: "search"),
+            URLQueryItem(name: "gsrsearch", value: "Turkish cuisine \(query)"),
+            URLQueryItem(name: "gsrnamespace", value: "6"),
+            URLQueryItem(name: "gsrlimit", value: "3"),
+            URLQueryItem(name: "prop", value: "imageinfo"),
+            URLQueryItem(name: "iiprop", value: "url|mimetype")
+        ]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        request.setValue("GokturkOBS/2.0", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let queryData = json["query"] as? [String: Any],
+              let pages = queryData["pages"] as? [String: Any],
+              let firstPage = pages.values.first as? [String: Any],
+              let info = firstPage["imageinfo"] as? [[String: Any]],
+              let imageInfo = info.first,
+              let imageURLString = imageInfo["url"] as? String else { return nil }
+        guard imageURLString.lowercased().hasPrefix("http"), let imageURL = URL(string: imageURLString) else { return nil }
+        return FoodPhoto(thumbnailURL: imageURL, sourcePageURL: nil)
+    }
+
+    /// Bing image search — last resort real-image provider.
+    private func bingImagePhoto(for mealName: String) async -> FoodPhoto? {
+        let query = "yemek tarifi \(mealName)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? mealName
+        guard var components = URLComponents(string: "https://www.bing.com/images/search") else { return nil }
+        components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "form", value: "HDRSC")]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode,
+              let html = String(data: data, encoding: .utf8) else { return nil }
+        let pattern = try! NSRegularExpression(pattern: #""murl"\s*:\s*"([^"]+)"#)
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        guard let match = pattern.firstMatch(in: html, range: range),
+              let contentRange = Range(match.range(at: 1), in: html) else { return nil }
+        let imageURLString = String(html[contentRange])
+        guard let imageURL = URL(string: imageURLString) else { return nil }
+        return FoodPhoto(thumbnailURL: imageURL, sourcePageURL: nil)
+    }
+
     private func photo(from recipe: Recipe) -> FoodPhoto? {
         let variants = recipe.featuredImage?.mediaData
         guard let imageURL = variants?["ymk-medium"]?.path ?? variants?["ymk-thumbnail"]?.path else {
@@ -796,7 +1005,11 @@ private actor FoodPhotoService {
     }
 
     private func isIgnoredMeal(_ mealName: String) -> Bool {
-        normalized(mealName) == "tatil"
+        let n = normalized(mealName)
+        if n == "tatil" { return true }
+        if n.contains("yarim gun") || n.contains("ogle yemegi yok") { return true }
+        if n.contains("osmanli mutfagi") { return true }
+        return false
     }
 
 }
@@ -995,7 +1208,8 @@ struct FoodListView: View {
     var body: some View {
         FoodListContent(
             state: model.foodListState,
-            preferredSelectedID: model.foodListSelectedDayID
+            preferredSelectedID: model.foodListSelectedDayID,
+            analyses: model.foodMenuAnalyses
         ) {
             Task {
                 await model.loadFoodList(forceReload: true)
@@ -1023,6 +1237,7 @@ struct FoodListView: View {
 private struct FoodListContent: View {
     let state: FoodListLoadState
     let preferredSelectedID: FoodMenuDay.ID?
+    let analyses: [FoodMenuDay.ID: FoodMenuAnalysisDay]
     let retry: () -> Void
 
     var body: some View {
@@ -1034,7 +1249,8 @@ private struct FoodListContent: View {
             ParsedFoodMenuView(
                 document: document,
                 days: days,
-                preferredSelectedID: preferredSelectedID
+                preferredSelectedID: preferredSelectedID,
+                analyses: analyses
             )
         case .empty:
             ContentUnavailableView(
@@ -1078,6 +1294,7 @@ private struct ParsedFoodMenuView: View {
     let document: PDFDocument
     let days: [FoodMenuDay]
     let preferredSelectedID: FoodMenuDay.ID?
+    let analyses: [FoodMenuDay.ID: FoodMenuAnalysisDay]
     @State private var selectedID: FoodMenuDay.ID?
     @State private var showsPDF = false
 
@@ -1097,7 +1314,7 @@ private struct ParsedFoodMenuView: View {
                 )
                 Divider()
                 if let day = days.first(where: { $0.id == selectedID }) ?? days.first {
-                    FoodMenuDayView(day: day)
+                    FoodMenuDayView(day: day, analysis: analyses[day.id])
                         .navigationTitle(day.heading)
                 }
             }
@@ -1162,10 +1379,12 @@ private struct FoodMenuDayView: View {
     }
 
     let day: FoodMenuDay
+    let analysis: FoodMenuAnalysisDay?
     private let entries: [MenuEntry]
 
-    init(day: FoodMenuDay) {
+    init(day: FoodMenuDay, analysis: FoodMenuAnalysisDay? = nil) {
         self.day = day
+        self.analysis = analysis
         var occurrences: [String: Int] = [:]
         entries = day.items.enumerated().map { index, item in
             let occurrence = occurrences[item, default: 0]
@@ -1185,7 +1404,8 @@ private struct FoodMenuDayView: View {
                     ForEach(entries) { entry in
                         FoodMenuItemRow(
                             number: entry.number,
-                            name: entry.name
+                            name: entry.name,
+                            analysis: analysis?.item(named: entry.name)
                         )
                         if entry.id != entries.last?.id {
                             Divider()
@@ -1215,28 +1435,58 @@ private struct FoodMenuDayView: View {
 private struct FoodMenuItemRow: View {
     let number: Int
     let name: String
+    let analysis: FoodMenuAnalysisItem?
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             FoodPhotoView(mealName: name)
 
-            Text(name)
-                .font(.body)
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                    .font(.body)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                openYemeksepeti()
-            } label: {
-                Label("Sipariş ver", systemImage: "bag")
-                    .labelStyle(.titleAndIcon)
+                if let analysis {
+                    HStack(spacing: 6) {
+                        // Category
+                        Text(analysis.category.titleTr)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: Capsule())
+
+                        // Calories
+                        if let cal = analysis.calories {
+                            Text("\(cal) kcal")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        // Dietary tags
+                        ForEach(analysis.dietaryTags, id: \.self) { tag in
+                            Text(tag.titleTr)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.green.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.green)
+                        }
+
+                        // Allergens
+                        ForEach(analysis.allergens, id: \.self) { allergen in
+                            Text(allergen)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.red.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help("\(name) için Yemeksepeti'nde ara")
-            .accessibilityLabel("\(name) için Yemeksepeti'nde sipariş ara")
 
             Text("\(number)")
                 .font(.caption.monospacedDigit())
@@ -1248,16 +1498,6 @@ private struct FoodMenuItemRow: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func openYemeksepeti() {
-        var components = URLComponents(string: "https://www.yemeksepeti.com/restaurants/new")
-        components?.queryItems = [URLQueryItem(name: "query", value: orderSearchName)]
-        guard let url = components?.url else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    private var orderSearchName: String {
-        FoodMealSearchStrategy.candidates(for: name, limit: 1).first ?? name
-    }
 }
 
 struct FoodPhotoView: View {

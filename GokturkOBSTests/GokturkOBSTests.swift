@@ -251,3 +251,151 @@ struct FoodMealSearchStrategyTests {
         #expect(FoodMealSearchStrategy.fallbackQueries(for: "et") == ["et", "et yemeği"])
     }
 }
+
+struct MealDayTests {
+    @Test
+    func preservesSourceNamesAndMarksAmbiguousMenus() {
+        let menu = FoodMenuDay(
+            heading: "10 Kasım Pazartesi",
+            items: ["MERCİMEK ÇORBASI", "TAVUK SOTE", "BULGUR PİLAVI", "SÜTLAÇ"],
+            pageIndex: 0
+        )
+
+        let meal = MealDay.from(menuDay: menu)
+
+        #expect(meal.soup == "MERCİMEK ÇORBASI")
+        #expect(meal.mainCourse == "TAVUK SOTE")
+        #expect(meal.sideDish == "BULGUR PİLAVI")
+        #expect(meal.dessert == "SÜTLAÇ")
+        #expect(!meal.isUncertain)
+    }
+
+    @Test
+    func handlesMalformedOrMissingMenuItemsWithoutInventingFood() {
+        let menu = FoodMenuDay(heading: "Salı", items: ["   "], pageIndex: 0)
+
+        let meal = MealDay.from(menuDay: menu)
+
+        #expect(meal.soup == nil)
+        #expect(meal.mainCourse == nil)
+        #expect(meal.additionalItems.isEmpty)
+        #expect(meal.isUncertain)
+    }
+}
+
+struct FoodMenuAnalysisTests {
+    @Test
+    func heuristicAnalysisKeepsSourceNamesAndClassifiesDishes() {
+        let menu = FoodMenuDay(
+            heading: "10 Kasım Pazartesi",
+            items: ["MERCİMEK ÇORBASI", "TAVUK SOTE", "BULGUR PİLAVI", "SÜTLAÇ"],
+            pageIndex: 0
+        )
+
+        let analysis = AppleIntelligenceService.heuristicAnalysis(for: menu)
+
+        #expect(analysis.items.map(\.name) == menu.items)
+        #expect(analysis.items[0].category == .soup)
+        #expect(analysis.items[1].category == .mainDish)
+        #expect(analysis.items[2].category == .sideDish)
+        #expect(analysis.items[3].category == .dessertOrFruit)
+        #expect(analysis.items.allSatisfy { $0.calories == nil })
+        #expect(!analysis.usedAppleIntelligence)
+        #expect(!analysis.summary.isEmpty)
+    }
+
+    @Test
+    func analysisLookupIsDiacriticInsensitive() {
+        let menu = FoodMenuDay(
+            heading: "Salı",
+            items: ["MERCİMEK ÇORBASI"],
+            pageIndex: 1
+        )
+
+        let analysis = AppleIntelligenceService.heuristicAnalysis(for: menu)
+
+        #expect(analysis.item(named: "mercimek corbasi")?.name == "MERCİMEK ÇORBASI")
+    }
+
+    @Test
+    func skipsBlankDishesWithoutInventingFood() {
+        let menu = FoodMenuDay(heading: "Çarşamba", items: ["  ", ""], pageIndex: 2)
+
+        let analysis = AppleIntelligenceService.heuristicAnalysis(for: menu)
+
+        #expect(analysis.items.isEmpty)
+        #expect(analysis.summary.isEmpty)
+    }
+}
+
+struct FoodMenuParserDateTests {
+    @Test
+    func readsTurkishDateHeadings() throws {
+        let date = try #require(FoodMenuParser.date(in: "2 Kasım 2026"))
+        let calendar = Calendar(identifier: .gregorian)
+
+        #expect(calendar.component(.year, from: date) == 2026)
+        #expect(calendar.component(.month, from: date) == 11)
+        #expect(calendar.component(.day, from: date) == 2)
+    }
+
+    @Test
+    func readsNumericDateHeadings() throws {
+        let date = try #require(FoodMenuParser.date(in: "13.11.2026 Cuma"))
+        let calendar = Calendar(identifier: .gregorian)
+
+        #expect(calendar.component(.day, from: date) == 13)
+        #expect(calendar.component(.month, from: date) == 11)
+    }
+
+    @Test
+    func readsDateWithoutYearUsingThePageYear() throws {
+        let date = try #require(FoodMenuParser.date(in: "2 Kasım", defaultYear: 2026))
+        let calendar = Calendar(identifier: .gregorian)
+
+        #expect(calendar.component(.year, from: date) == 2026)
+        #expect(calendar.component(.month, from: date) == 11)
+        #expect(calendar.component(.day, from: date) == 2)
+    }
+
+    @Test
+    func readsNumericDateWithoutYearUsingThePageYear() throws {
+        let date = try #require(FoodMenuParser.date(in: "02.11 Pazartesi", defaultYear: 2026))
+        let calendar = Calendar(identifier: .gregorian)
+
+        #expect(calendar.component(.year, from: date) == 2026)
+        #expect(calendar.component(.month, from: date) == 11)
+        #expect(calendar.component(.day, from: date) == 2)
+    }
+
+    @Test
+    func ignoresTextWithoutADateOrWeekday() {
+        #expect(FoodMenuParser.date(in: "KASIM AYI YEMEK LİSTESİ") == nil)
+    }
+
+    @Test
+    func ignoresWeekRangesAsASingleDay() {
+        #expect(FoodMenuParser.date(in: "09-13 Kasım 2026") == nil)
+        #expect(FoodMenuParser.date(in: "02-06 Kasım 2026") == nil)
+    }
+
+    @Test
+    func cacheRoundTripsParsedDaysAndAnalyses() throws {
+        let days = [
+            FoodMenuDay(
+                heading: "2 Kasım 2026",
+                items: ["MERCİMEK ÇORBASI", "TAVUK SOTE"],
+                pageIndex: 0
+            )
+        ]
+        let analysis = AppleIntelligenceService.heuristicAnalysis(for: days[0])
+        let cache = FoodMenuCache(days: days, analyses: [days[0].id: analysis])
+
+        let encoded = try JSONEncoder().encode(cache)
+        let decoded = try JSONDecoder().decode(FoodMenuCache.self, from: encoded)
+
+        #expect(decoded == cache)
+        #expect(decoded.days.first?.heading == "2 Kasım 2026")
+        #expect(decoded.analyses[days[0].id]?.items.count == 2)
+    }
+}

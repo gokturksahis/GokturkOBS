@@ -607,6 +607,7 @@ struct ExamsView: View {
         NavigationStack {
             Group {
                 if let dashboard = model.examDashboard {
+                    #if os(macOS)
                     HSplitView {
                         ScrollView {
                             examsContent(dashboard)
@@ -621,6 +622,15 @@ struct ExamsView: View {
                         }
                         .frame(minWidth: 420)
                     }
+                    #else
+                    ScrollView {
+                        examsContent(dashboard)
+                            .padding(20)
+                        Divider()
+                        summaryContent(dashboard)
+                            .padding(22)
+                    }
+                    #endif
                 } else if let error = model.error {
                     ContentUnavailableView("Sınavlar alınamadı", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
